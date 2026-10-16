@@ -100,15 +100,21 @@ Pass-2 losses are summed over target tokens and weighted edges, then averaged ov
 expectation in eq. 2), for every configuration. Token-averaged losses would weight graphs by their size.
 
 ### D-015 Resource glob semantics and contract validation
-SPEC §3 leaves two details open. (a) `*` in a resource pattern matches any string, newlines included
-(`src/qet/core/contracts.py` compiles globs with DOTALL). The oracle's regex `.` stops at a newline, so the two
-differ only for resources built from argument values that contain a newline; there ours reports a conflict and
-the oracle does not, which is the conservative side (SPEC §4: uncertainty adds edges). (b) Contract declarations
-are validated when parsed: only the fields `reads`, `writes`, `volatile` (each a list of strings; an omitted field
-is empty, as in the oracle), no `?`, `[` or `]` in a pattern outside `{arg}` placeholders (SPEC: "resources must
-not contain other glob characters"), no empty volatile path. Argument values are substituted unchanged, as in
-the oracle (a `*` inside a value then acts as a glob; every other character is literal). Default: as described;
-cheap to reverse (one module).
+`src/qet/core/contracts.py`. (a) `*` in a resource pattern matches any string, newlines included, and nothing
+else is special (a linear-time wildcard matcher, so model-generated arguments full of `*` cannot blow up; a run of
+`*` acts as one). The oracle's regex `.*` stops at a newline, so in the oracle even the universal `*` of a tool
+without a contract (or of a template with a missing argument) fails to meet a resource that contains a newline,
+which contradicts SPEC §3. The two differ only for resources with a newline (from a template or an argument
+value), and there ours always reports the conflict (tested: we conflict whenever the oracle does). See Q7.
+(b) Contract declarations are validated when parsed: only the fields `reads`, `writes`, `volatile`, each a list of
+strings; `reads` and `writes` are required (`[]` declares none; the oracle treats an omitted field as empty, so a
+typo would silently declare a pure tool), `volatile` may be omitted; outside `{arg}` placeholders (whose names are
+word characters, the oracle's `\{(\w+)\}`) a pattern may not contain `?`, `[`, `]` (SPEC: "resources must not
+contain other glob characters"), `{` or `}` (the oracle keeps a placeholder such as `{order-id}` as literal text,
+which silently loses the conflict); volatile paths are non-empty. Every deviation from the oracle fails loudly on
+input the oracle accepts, and no fixture is affected. Argument values are substituted unchanged, as in the oracle
+(a `*` inside a value acts as a glob; every other character is literal). Default: as described; cheap to reverse
+(one module).
 
 ### D-016 Graph record and compile report details
 SPEC §1 and §4 leave these open; `src/qet/core/compile.py` does the following. (a) The record's `compile` block
@@ -153,3 +159,15 @@ Default: as described; cheap to reverse.
 - [ ] Q5 Publication: is code, data or checkpoints going to be released (affects license checks and AppWorld
   rules)?
 - [ ] Q6 Anything in SPEC.md the human wants to change before E0 starts.
+- [ ] Q7 (from the E0.2 review) Make `reference/qet_ref.py`'s `_glob` match newlines (`re.DOTALL`) so the oracle
+  agrees with SPEC §3 and D-015(a); no fixture contains a newline resource. Also: should the oracle reject the
+  contracts D-015(b) rejects?
+- [ ] Q8 (SPEC §3) Two patterns meet only when one glob-matches the other, so partial globs on both sides never
+  meet (`*:7` and `order:*` both cover `order:7`). Acceptable for the AppWorld-style resources of M2, or should
+  meeting mean "some string matches both"?
+- [ ] Q9 (SPEC §3) Volatile paths cannot descend into lists or name a key that contains a dot, so lists of
+  timestamped records will fail the replay audit and fall back to a chain. Extend the path syntax before AppWorld?
+- [ ] Q10 (SPEC §2) `show_call` prints keys raw: different calls can share a name when keys are not identifiers
+  (`f(a=1, b=2)` for `{"a": 1, "b": 2}` and `{"a=1, b": 2}`), and a key containing a newline adds a line to the
+  prompt. The oracle (and so ours) numbers repeats `#k` by that display name, while SPEC §2 says "same tool, same
+  canonical args"; the two agree except for such keys. Keep, or quote non-identifier keys?

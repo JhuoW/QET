@@ -278,8 +278,7 @@ def _volatile_consumed(
     found = []
     raw = [canon(s.get("obs")) for s in steps]
     for u, (tool, _) in enumerate(calls):
-        contract = c.get(tool)
-        for path in contract.volatile if contract else ():
+        for path in c.volatile(tool):
             field: JSON = raw[u]
             for part in path.split("."):
                 field = field.get(part) if isinstance(field, dict) else None

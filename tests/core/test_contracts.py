@@ -1,11 +1,22 @@
 """Tool contracts, resource patterns and the conflict function (SPEC §3)."""
 
 import random
+import re
+import time
 
 import pytest
 import qet_ref as R
 
-from qet.core.contracts import WILDCARD, Contract, Contracts, Effects, as_contracts, conflict, patterns_meet
+from qet.core.contracts import (
+    WILDCARD,
+    Contract,
+    Contracts,
+    Effects,
+    as_contracts,
+    conflict,
+    glob_match,
+    patterns_meet,
+)
 
 EVERYTHING = Effects(frozenset({WILDCARD}), frozenset({WILDCARD}))
 PURE = Effects(frozenset(), frozenset())
@@ -105,9 +116,42 @@ def test_contract_validation():
         Contracts.from_json({"t": ["reads"]})
 
 
-def test_omitted_fields_are_empty():
-    assert Contract.from_json({}) == Contract()
-    assert Contracts.from_json({"t": {"volatile": ["ts"]}}).effects("t", {}) == PURE
+def test_reads_and_writes_must_be_declared_and_volatile_may_be_omitted():
+    for bad in ({}, {"volatile": ["ts"]}, {"reads": []}, {"writes": ["x"]}):
+        with pytest.raises(ValueError):
+            Contract.from_json(bad)
+    assert Contract.from_json({"reads": [], "writes": []}) == Contract((), ())
+    assert Contracts.from_json({"t": {"reads": [], "writes": []}}).effects("t", {}) == PURE
+
+
+def test_placeholders_must_be_word_names():
+    for bad in ("order:{order-id}", "order:{user.id}", "order:{id", "order:id}", "{}", "order:{e\u0301}"):
+        with pytest.raises(ValueError):
+            Contract.from_json({"reads": [bad], "writes": []})
+    assert Contract.from_json({"reads": ["order:{order_id}"], "writes": []}).reads == ("order:{order_id}",)
+
+
+def test_volatile_paths_of_a_tool():
+    c = Contracts.from_json({"f": {"reads": [], "writes": [], "volatile": ["ts", "meta.id"]}})
+    assert c.volatile("f") == ("ts", "meta.id") and c.volatile("unknown") == ()
+
+
+def test_runs_of_stars_in_argument_values_stay_fast():
+    c = Contracts.from_json({"use_card": {"reads": ["card:{card}"], "writes": ["card:{card}"]}})
+    start = time.perf_counter()
+    a = c.effects("use_card", {"card": "*" * 40 + "1234"})
+    assert not conflict(a, c.effects("use_card", {"card": "5" * 40}))
+    assert conflict(a, c.effects("use_card", {"card": "5" * 36 + "1234"}))
+    assert time.perf_counter() - start < 1.0
+
+
+def test_glob_match_agrees_with_a_dotall_regex():
+    rng = random.Random(0)
+    for _ in range(20000):
+        pattern = "".join(rng.choice("ab*\n:") for _ in range(rng.randint(0, 7)))
+        s = "".join(rng.choice("ab*\n:") for _ in range(rng.randint(0, 7)))
+        rx = re.compile(".*".join(re.escape(part) for part in pattern.split("*")), re.DOTALL)
+        assert glob_match(pattern, s) == (rx.fullmatch(s) is not None), (pattern, s)
 
 
 # ----------------------------------------------------------------------------- differential against the oracle
@@ -142,6 +186,29 @@ def test_effects_and_conflict_match_the_oracle():
         for i in range(len(calls)):
             for j in range(len(calls)):
                 assert conflict(eff[i], eff[j]) == R.conflict(calls[i], calls[j], raw)
+
+
+def test_we_conflict_whenever_the_oracle_does_and_agree_without_newlines():
+    rng = random.Random(1)
+    templates = ["note:{title}", "note:*", "*", "note:a\nb", "log", "x{title}y"]
+    values = ["a\nb", "a", "*", "**b", "\n", "", 7, None]
+    for _ in range(3000):
+        raw = {
+            f"t{i}": {
+                "reads": rng.sample(templates, rng.randint(0, 2)),
+                "writes": rng.sample(templates, rng.randint(0, 2)),
+            }
+            for i in range(3)
+            if rng.random() < 0.8
+        }
+        c = Contracts.from_json(raw)
+        u = (f"t{rng.randrange(4)}", {"title": rng.choice(values)} if rng.random() < 0.8 else {})
+        v = (f"t{rng.randrange(4)}", {"title": rng.choice(values)} if rng.random() < 0.8 else {})
+        ours, oracle = conflict(c.effects(*u), c.effects(*v)), R.conflict(u, v, raw)
+        assert ours or not oracle, (raw, u, v)
+        involved = list(c.effects(*u).reads | c.effects(*u).writes | c.effects(*v).reads | c.effects(*v).writes)
+        if not any("\n" in r for r in involved):
+            assert ours == oracle, (raw, u, v)
 
 
 def test_volatile_deletion_matches_the_oracle_on_random_demos():

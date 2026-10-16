@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any
 
 from qet.core.canonical import JSON, canon, canon_json
@@ -18,8 +17,9 @@ from qet.core.canonical import JSON, canon, canon_json
 WILDCARD = "*"
 
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
-_OTHER_GLOB_CHARS = re.compile(r"[?\[\]]")
+_FORBIDDEN_OUTSIDE_PLACEHOLDERS = re.compile(r"[?\[\]{}]")
 _FIELDS = ("reads", "writes", "volatile")
+_REQUIRED = ("reads", "writes")
 
 
 @dataclass(frozen=True)
@@ -37,18 +37,26 @@ EVERYTHING = Effects(frozenset({WILDCARD}), frozenset({WILDCARD}))  # a tool wit
 class Contract:
     """Resource templates (`order:{id}`) read and written by a tool, and its volatile observation paths."""
 
-    reads: tuple[str, ...] = ()
-    writes: tuple[str, ...] = ()
+    reads: tuple[str, ...]
+    writes: tuple[str, ...]
     volatile: tuple[str, ...] = ()
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> Contract:
-        """Parse `{"reads": [...], "writes": [...], "volatile": [...]}`; an omitted field is empty."""
+        """Parse `{"reads": [...], "writes": [...], "volatile": [...]}` (D-015).
+
+        `reads` and `writes` are required (`[]` declares that the tool reads or writes nothing, so a typo cannot
+        silently declare a pure tool); `volatile` may be omitted. Patterns may use `{arg}` placeholders whose
+        names are word characters and `*` as a glob; any other `{`, `}`, `?`, `[`, `]` is an error.
+        """
         if not isinstance(data, Mapping):
             raise TypeError(f"a contract must be an object, got {type(data).__name__}")
         unknown = sorted(set(data) - set(_FIELDS))
         if unknown:
             raise ValueError(f"unknown contract fields {unknown}; expected {list(_FIELDS)}")
+        missing = [name for name in _REQUIRED if name not in data]
+        if missing:
+            raise ValueError(f"a contract must declare {missing} (use [] for none)")
         fields = {}
         for name in _FIELDS:
             items = data.get(name, [])
@@ -56,8 +64,11 @@ class Contract:
                 raise TypeError(f"contract field {name!r} must be a list of strings, got {items!r}")
             fields[name] = tuple(items)
         for pattern in fields["reads"] + fields["writes"]:
-            if _OTHER_GLOB_CHARS.search(_PLACEHOLDER.sub("", pattern)):
-                raise ValueError(f"resource pattern {pattern!r} uses a glob character other than '*'")
+            if _FORBIDDEN_OUTSIDE_PLACEHOLDERS.search(_PLACEHOLDER.sub("", pattern)):
+                raise ValueError(
+                    f"resource pattern {pattern!r} has a character that is not allowed outside an {{arg}} "
+                    "placeholder ('?', '[', ']', '{', '}'); placeholder names are word characters"
+                )
         if any(not path for path in fields["volatile"]):
             raise ValueError("volatile paths must be non-empty dotted paths")
         return cls(**fields)
@@ -95,8 +106,10 @@ class Contracts:
             raise TypeError(f"contracts must be an object keyed by tool name, got {type(data).__name__}")
         return cls({tool: None if c is None else Contract.from_json(c) for tool, c in data.items()})
 
-    def get(self, tool: str) -> Contract | None:
-        return self._by_tool.get(tool)
+    def volatile(self, tool: str) -> tuple[str, ...]:
+        """The volatile observation paths of `tool` (none without a contract)."""
+        c = self._by_tool.get(tool)
+        return c.volatile if c is not None else ()
 
     def effects(self, tool: str, args: Mapping[str, JSON]) -> Effects:
         c = self._by_tool.get(tool)
@@ -127,18 +140,30 @@ def _delete_path(obj: JSON, parts: list[str]) -> None:
         obj.pop(parts[-1], None)
 
 
-@lru_cache(maxsize=4096)
-def _glob(pattern: str) -> re.Pattern[str]:
-    return re.compile(".*".join(re.escape(part) for part in pattern.split(WILDCARD)), re.DOTALL)
+def glob_match(pattern: str, s: str) -> bool:
+    """Whether `pattern` matches all of `s`, where `*` matches any string (empty and newlines included) and every
+    other character matches itself. Greedy with backtracking to the last `*`: O(len(pattern) * len(s)) at worst,
+    so model-generated arguments full of `*` cannot make it blow up."""
+    p = i = 0
+    star, mark = -1, 0
+    while i < len(s):
+        if p < len(pattern) and pattern[p] == WILDCARD:
+            star, mark = p, i
+            p += 1
+        elif p < len(pattern) and pattern[p] == s[i]:
+            p += 1
+            i += 1
+        elif star >= 0:
+            p, mark = star + 1, mark + 1
+            i = mark
+        else:
+            return False
+    return all(c == WILDCARD for c in pattern[p:])
 
 
 def patterns_meet(p: str, q: str) -> bool:
-    """Two resource patterns meet when either one glob-matches the other; `*` matches any string (SPEC §3)."""
-    if p == q:
-        return True
-    return (WILDCARD in p and _glob(p).fullmatch(q) is not None) or (
-        WILDCARD in q and _glob(q).fullmatch(p) is not None
-    )
+    """Two resource patterns meet when either one glob-matches the other (SPEC §3)."""
+    return p == q or (WILDCARD in p and glob_match(p, q)) or (WILDCARD in q and glob_match(q, p))
 
 
 def _meet(a: frozenset[str], b: frozenset[str]) -> bool:
