@@ -19,18 +19,31 @@ Goal: `src/qet/core` reproduces every fixture; property tests hold on random ins
   evidence: `pytest reference/acceptance -q -k "canonical_json or action_string"` → 17 passed; `pytest
   tests/core/test_canonical.py tests/core/test_contracts.py -q` → 36 passed; `make lint` → exit 0; spec-reviewer:
   no blocking findings, its 3 should-fix items fixed in 983ab5e (D-015, Q7-Q10); commit 983ab5e (work: a74f5c4)
-- [ ] **E0.3 Compile** (`compile.py`, graph record I/O, compile report). Accept: `-k "compile or canonical_order"`
+- [x] **E0.3 Compile** (`compile.py`, graph record I/O, compile report). Accept: `-k "compile or canonical_order"`
   passes; property and differential tests on ≥ 500 random demos (tests may import `reference/qet_ref.py`, for
   example its `random_demo` and `compile_edges`): identical edges to the oracle, edges point forward, labels
   valid, every conflicting pair and every (earlier, write) pair has an edge, demo order is topological.
-- [ ] **E0.4 Reduce and Render** (`reduce.py`, `render.py`, all three renderers of SPEC §5.7). Accept:
+  evidence: `pytest reference/acceptance -q -k "compile or canonical_order"` → 32 passed; `pytest
+  tests/core/test_compile.py tests/core/test_fuzz.py -q` → 26 passed (600 oracle demos + 800 richer demos,
+  identical edges and canonical orders); spec-reviewer: no blocking findings, review items fixed or recorded
+  (D-016, D-019, Q11-Q12); commit 903897a (work: 8d3edd9)
+- [x] **E0.4 Reduce and Render** (`reduce.py`, `render.py`, all three renderers of SPEC §5.7). Accept:
   `-k "reduce or render or same_completed"` passes; property test: ≥ 300 random graphs × 20 random orders × every
   prefix render byte-identically to the demo-order history of the same set, and match the oracle's render.
-- [ ] **E0.5 Lattice and weights** (`lattice.py`, `weights.py`: enumeration with cap, μ, log B, flow, all
+  evidence: `pytest reference/acceptance -q -k "reduce or render or same_completed"` → 19 passed; `pytest
+  tests/core/test_reduce_render.py -q` → 20 passed (300 graphs × 20 orders × every prefix, equal to the oracle);
+  spec-reviewer: no blocking findings (D-017, D-019); commit 903897a (work: ddec7c8)
+- [x] **E0.5 Lattice and weights** (`lattice.py`, `weights.py`: enumeration with cap, μ, log B, flow, all
   methods of SPEC §8, sub-lattice sampling, B⁺). Accept: `-k lattice` passes; property tests for SPEC §9 items
   1–9 on ≥ 300 random DAGs (n ≤ 8), float64, plus differential tests against the oracle on random DAGs.
-- [ ] **E0.6 Facade** (`api.py`, SPEC §10). Accept: `pytest reference -q` reports only passed tests (0 failed,
+  evidence: `pytest reference/acceptance -q -k lattice` → 52 passed; `pytest tests/core/test_lattice.py
+  tests/core/test_identities.py -q` → 27 passed (SPEC §9 items 1–9 on 300 DAGs, slow finite-difference test
+  included; 300-DAG differential per method); spec-reviewer: no blocking findings (D-018); commit 903897a (work:
+  3c7e901)
+- [x] **E0.6 Facade** (`api.py`, SPEC §10). Accept: `pytest reference -q` reports only passed tests (0 failed,
   0 errors, 0 skipped).
+  evidence: `pytest reference -q` → 134 passed (0 failed, 0 errors, 0 skipped); `make test` → 279 passed;
+  `make lint` → exit 0; spec-reviewer: no blocking findings; commit 903897a (work: be7917b)
 - [ ] **E0.7 Review.** Run the spec-reviewer (fresh context) on `src/qet/core`; fix or answer every blocking
   finding (answers go to DECISIONS.md). Accept: review report saved to `docs/reports/E0-review.md`.
 - [ ] **GATE E0** (optional but recommended): the human reads the core diff and the review.
