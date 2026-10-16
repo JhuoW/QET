@@ -340,6 +340,6 @@ changed here, so `src/qet/core` stays as reviewed at f11fbce.
 
 ## Status at the close of E0.7
 
-Four spec reviews of `src/qet/core` (E0.2 at a74f5c4, E0.3-E0.6 at 19f5d54, the end-of-E0 review at ce7ef3e, and the
-follow-ups at 73e7413 and f11fbce) report **no blocking findings**; there is **no open blocking finding**. Open items
+Five spec reviews of `src/qet/core` (E0.2 at a74f5c4, E0.3-E0.6 at 19f5d54, the end-of-E0 review at ce7ef3e, and the
+two follow-ups at 73e7413 and f11fbce) report **no blocking findings**; there is **no open blocking finding**. Open items
 for the human are the Proposed decisions D-015 to D-020 and the questions Q1 and Q7 to Q15 in `docs/DECISIONS.md`.
