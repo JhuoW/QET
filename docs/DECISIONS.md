@@ -186,7 +186,12 @@ which SPEC §4 forbids, and core cannot detect it. Proposed for the M1.3 compile
 ground-truth edges as task constraints. (b) At inference (E1.4), an action whose args cannot be canonicalized
 (NaN, infinities, keys that collide after NFC) ends the episode as `invalid_action` (D-006) instead of raising out
 of Reduce; adapters make observations canonicalizable before Reduce (for example NaN to null) and record that in
-their compile report. Default: as described; to be implemented and tested in E1.4 and M1.
+their compile report. (c) E1.3: the trainer logs `logged_objective(edge_weights(...), lat, logp)` without an explicit
+`mu`, or checks that a given `mu` equals `start_weights(lat, ew.lam)`; a mismatched `mu` would silently log another
+objective (second follow-up review, note 1). (d) The facade `lattice_summary` should reject keys whose node ids
+are >= n before building bitmasks (memory) and report keys that name no edge (facade only; note 2). (e) Once torch
+is a dependency (E1), GPU tests are selected from what torch sees (`CUDA_VISIBLE_DEVICES` respected) rather than
+from `nvidia-smi -L` (note 3). Default: as described; to be implemented and tested in E1 and M1.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
