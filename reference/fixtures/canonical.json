@@ -1,0 +1,129 @@
+{
+ "description": "Canonical JSON values, action strings (D-001 tool-first) and call names (SPEC \u00a72).",
+ "values": [
+  {
+   "input": 1200.0,
+   "canonical_json": "1200"
+  },
+  {
+   "input": -0.0,
+   "canonical_json": "0"
+  },
+  {
+   "input": 2.5,
+   "canonical_json": "2.5"
+  },
+  {
+   "input": 1e+16,
+   "canonical_json": "1e+16"
+  },
+  {
+   "input": 7,
+   "canonical_json": "7"
+  },
+  {
+   "input": true,
+   "canonical_json": "true"
+  },
+  {
+   "input": null,
+   "canonical_json": "null"
+  },
+  {
+   "input": "e\u0301",
+   "canonical_json": "\"\u00e9\""
+  },
+  {
+   "input": {
+    "to": "SG",
+    "from": "NYC"
+   },
+   "canonical_json": "{\"from\":\"NYC\",\"to\":\"SG\"}"
+  },
+  {
+   "input": {
+    "b": [
+     1.0,
+     {
+      "d": true,
+      "c": null
+     }
+    ],
+    "a": "x"
+   },
+   "canonical_json": "{\"a\":\"x\",\"b\":[1,{\"c\":null,\"d\":true}]}"
+  },
+  {
+   "input": [
+    3,
+    2.0,
+    "1"
+   ],
+   "canonical_json": "[3,2,\"1\"]"
+  }
+ ],
+ "calls": [
+  {
+   "tool": "get_flight_price",
+   "args": {
+    "to": "SG",
+    "from": "NYC"
+   },
+   "action_string": "{\"tool\":\"get_flight_price\",\"args\":{\"from\":\"NYC\",\"to\":\"SG\"}}",
+   "action_string_sorted_variant": "{\"args\":{\"from\":\"NYC\",\"to\":\"SG\"},\"tool\":\"get_flight_price\"}",
+   "show_call": "get_flight_price(from=\"NYC\", to=\"SG\")"
+  },
+  {
+   "tool": "calculate_total",
+   "args": {
+    "hotel_price": 600.0,
+    "flight_price": 1200
+   },
+   "action_string": "{\"tool\":\"calculate_total\",\"args\":{\"flight_price\":1200,\"hotel_price\":600}}",
+   "action_string_sorted_variant": "{\"args\":{\"flight_price\":1200,\"hotel_price\":600},\"tool\":\"calculate_total\"}",
+   "show_call": "calculate_total(flight_price=1200, hotel_price=600)"
+  },
+  {
+   "tool": "finish",
+   "args": {
+    "answer": 1800
+   },
+   "action_string": "{\"tool\":\"finish\",\"args\":{\"answer\":1800}}",
+   "action_string_sorted_variant": "{\"args\":{\"answer\":1800},\"tool\":\"finish\"}",
+   "show_call": "finish(answer=1800)"
+  },
+  {
+   "tool": "ping",
+   "args": {},
+   "action_string": "{\"tool\":\"ping\",\"args\":{}}",
+   "action_string_sorted_variant": "{\"args\":{},\"tool\":\"ping\"}",
+   "show_call": "ping()"
+  },
+  {
+   "tool": "search",
+   "args": {
+    "q": {
+     "z": 1,
+     "a": [
+      2,
+      3.0
+     ]
+    },
+    "limit": 10
+   },
+   "action_string": "{\"tool\":\"search\",\"args\":{\"limit\":10,\"q\":{\"a\":[2,3],\"z\":1}}}",
+   "action_string_sorted_variant": "{\"args\":{\"limit\":10,\"q\":{\"a\":[2,3],\"z\":1}},\"tool\":\"search\"}",
+   "show_call": "search(limit=10, q={\"a\":[2,3],\"z\":1})"
+  },
+  {
+   "tool": "send_email",
+   "args": {
+    "to": "me",
+    "body": "Total: 1800 SGD\nThanks"
+   },
+   "action_string": "{\"tool\":\"send_email\",\"args\":{\"body\":\"Total: 1800 SGD\\nThanks\",\"to\":\"me\"}}",
+   "action_string_sorted_variant": "{\"args\":{\"body\":\"Total: 1800 SGD\\nThanks\",\"to\":\"me\"},\"tool\":\"send_email\"}",
+   "show_call": "send_email(body=\"Total: 1800 SGD\\nThanks\", to=\"me\")"
+  }
+ ]
+}

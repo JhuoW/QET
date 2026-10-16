@@ -1,0 +1,493 @@
+{
+ "description": "Render (SPEC §5.2-5.7). Cases without their own task/contracts use the running example's. Pairs that reach the same completed set must be byte-identical in the quotient variant.",
+ "task": {
+  "request": "Find the price of a flight from NYC to SG and the price of 3 nights at a hotel in SG, then compute the total cost.",
+  "tools": [
+   {
+    "name": "get_flight_price",
+    "params": [
+     "from",
+     "to"
+    ],
+    "description": "Look up a flight price"
+   },
+   {
+    "name": "get_hotel_price",
+    "params": [
+     "city",
+     "nights"
+    ],
+    "description": "Look up a hotel price"
+   },
+   {
+    "name": "calculate_total",
+    "params": [
+     "flight_price",
+     "hotel_price"
+    ],
+    "description": "Compute the total cost"
+   },
+   {
+    "name": "finish",
+    "params": [
+     "answer"
+    ],
+    "description": "Submit the final answer"
+   }
+  ]
+ },
+ "contracts": {
+  "get_flight_price": {
+   "reads": [
+    "flights"
+   ],
+   "writes": [],
+   "volatile": [
+    "request_id"
+   ]
+  },
+  "get_hotel_price": {
+   "reads": [
+    "hotels"
+   ],
+   "writes": [],
+   "volatile": [
+    "request_id"
+   ]
+  },
+  "calculate_total": {
+   "reads": [],
+   "writes": []
+  }
+ },
+ "cases": [
+  {
+   "name": "quotient:empty",
+   "history": [],
+   "variant": "quotient",
+   "expected": {
+    "system": "You are a tool-using agent. Read the task and the completed calls, then output the next action as one JSON object {\"tool\": ..., \"args\": {...}} and nothing else. Call finish when the task is complete.",
+    "user": "[Task] Find the price of a flight from NYC to SG and the price of 3 nights at a hotel in SG, then compute the total cost.\n[Tools]\n  calculate_total(flight_price, hotel_price): Compute the total cost\n  finish(answer): Submit the final answer\n  get_flight_price(from, to): Look up a flight price\n  get_hotel_price(city, nights): Look up a hotel price\n[Completed calls]\n  (none)\n[Available values]\n  (none)\n[Next action]"
+   }
+  },
+  {
+   "name": "quotient:A",
+   "history": [
+    {
+     "tool": "get_flight_price",
+     "args": {
+      "from": "NYC",
+      "to": "SG"
+     },
+     "obs": {
+      "price": 1200
+     }
+    }
+   ],
+   "variant": "quotient",
+   "expected": {
+    "system": "You are a tool-using agent. Read the task and the completed calls, then output the next action as one JSON object {\"tool\": ..., \"args\": {...}} and nothing else. Call finish when the task is complete.",
+    "user": "[Task] Find the price of a flight from NYC to SG and the price of 3 nights at a hotel in SG, then compute the total cost.\n[Tools]\n  calculate_total(flight_price, hotel_price): Compute the total cost\n  finish(answer): Submit the final answer\n  get_flight_price(from, to): Look up a flight price\n  get_hotel_price(city, nights): Look up a hotel price\n[Completed calls]\n  get_flight_price(from=\"NYC\", to=\"SG\") -> {\"price\":1200}\n[Available values]\n  get_flight_price(from=\"NYC\", to=\"SG\").price = 1200\n[Next action]"
+   }
+  },
+  {
+   "name": "quotient:B",
+   "history": [
+    {
+     "tool": "get_hotel_price",
+     "args": {
+      "city": "SG",
+      "nights": 3
+     },
+     "obs": {
+      "price": 600
+     }
+    }
+   ],
+   "variant": "quotient",
+   "expected": {
+    "system": "You are a tool-using agent. Read the task and the completed calls, then output the next action as one JSON object {\"tool\": ..., \"args\": {...}} and nothing else. Call finish when the task is complete.",
+    "user": "[Task] Find the price of a flight from NYC to SG and the price of 3 nights at a hotel in SG, then compute the total cost.\n[Tools]\n  calculate_total(flight_price, hotel_price): Compute the total cost\n  finish(answer): Submit the final answer\n  get_flight_price(from, to): Look up a flight price\n  get_hotel_price(city, nights): Look up a hotel price\n[Completed calls]\n  get_hotel_price(city=\"SG\", nights=3) -> {\"price\":600}\n[Available values]\n  get_hotel_price(city=\"SG\", nights=3).price = 600\n[Next action]"
+   }
+  },
+  {
+   "name": "quotient:A,B",
+   "history": [
+    {
+     "tool": "get_flight_price",
+     "args": {
+      "from": "NYC",
+      "to": "SG"
+     },
+     "obs": {
+      "price": 1200
+     }
+    },
+    {
+     "tool": "get_hotel_price",
+     "args": {
+      "city": "SG",
+      "nights": 3
+     },
+     "obs": {
+      "price": 600
+     }
+    }
+   ],
+   "variant": "quotient",
+   "expected": {
+    "system": "You are a tool-using agent. Read the task and the completed calls, then output the next action as one JSON object {\"tool\": ..., \"args\": {...}} and nothing else. Call finish when the task is complete.",
+    "user": "[Task] Find the price of a flight from NYC to SG and the price of 3 nights at a hotel in SG, then compute the total cost.\n[Tools]\n  calculate_total(flight_price, hotel_price): Compute the total cost\n  finish(answer): Submit the final answer\n  get_flight_price(from, to): Look up a flight price\n  get_hotel_price(city, nights): Look up a hotel price\n[Completed calls]\n  get_flight_price(from=\"NYC\", to=\"SG\") -> {\"price\":1200}\n  get_hotel_price(city=\"SG\", nights=3) -> {\"price\":600}\n[Available values]\n  get_flight_price(from=\"NYC\", to=\"SG\").price = 1200\n  get_hotel_price(city=\"SG\", nights=3).price = 600\n[Next action]"
+   }
+  },
+  {
+   "name": "quotient:B,A",
+   "history": [
+    {
+     "tool": "get_hotel_price",
+     "args": {
+      "city": "SG",
+      "nights": 3
+     },
+     "obs": {
+      "price": 600
+     }
+    },
+    {
+     "tool": "get_flight_price",
+     "args": {
+      "from": "NYC",
+      "to": "SG"
+     },
+     "obs": {
+      "price": 1200
+     }
+    }
+   ],
+   "variant": "quotient",
+   "expected": {
+    "system": "You are a tool-using agent. Read the task and the completed calls, then output the next action as one JSON object {\"tool\": ..., \"args\": {...}} and nothing else. Call finish when the task is complete.",
+    "user": "[Task] Find the price of a flight from NYC to SG and the price of 3 nights at a hotel in SG, then compute the total cost.\n[Tools]\n  calculate_total(flight_price, hotel_price): Compute the total cost\n  finish(answer): Submit the final answer\n  get_flight_price(from, to): Look up a flight price\n  get_hotel_price(city, nights): Look up a hotel price\n[Completed calls]\n  get_flight_price(from=\"NYC\", to=\"SG\") -> {\"price\":1200}\n  get_hotel_price(city=\"SG\", nights=3) -> {\"price\":600}\n[Available values]\n  get_flight_price(from=\"NYC\", to=\"SG\").price = 1200\n  get_hotel_price(city=\"SG\", nights=3).price = 600\n[Next action]"
+   }
+  },
+  {
+   "name": "quotient:A,B,C",
+   "history": [
+    {
+     "tool": "get_flight_price",
+     "args": {
+      "from": "NYC",
+      "to": "SG"
+     },
+     "obs": {
+      "price": 1200
+     }
+    },
+    {
+     "tool": "get_hotel_price",
+     "args": {
+      "city": "SG",
+      "nights": 3
+     },
+     "obs": {
+      "price": 600
+     }
+    },
+    {
+     "tool": "calculate_total",
+     "args": {
+      "flight_price": 1200,
+      "hotel_price": 600
+     },
+     "obs": {
+      "total": 1800
+     }
+    }
+   ],
+   "variant": "quotient",
+   "expected": {
+    "system": "You are a tool-using agent. Read the task and the completed calls, then output the next action as one JSON object {\"tool\": ..., \"args\": {...}} and nothing else. Call finish when the task is complete.",
+    "user": "[Task] Find the price of a flight from NYC to SG and the price of 3 nights at a hotel in SG, then compute the total cost.\n[Tools]\n  calculate_total(flight_price, hotel_price): Compute the total cost\n  finish(answer): Submit the final answer\n  get_flight_price(from, to): Look up a flight price\n  get_hotel_price(city, nights): Look up a hotel price\n[Completed calls]\n  calculate_total(flight_price=1200, hotel_price=600) -> {\"total\":1800}\n  get_flight_price(from=\"NYC\", to=\"SG\") -> {\"price\":1200}\n  get_hotel_price(city=\"SG\", nights=3) -> {\"price\":600}\n[Available values]\n  calculate_total(flight_price=1200, hotel_price=600).total = 1800\n  get_flight_price(from=\"NYC\", to=\"SG\").price = 1200\n  get_hotel_price(city=\"SG\", nights=3).price = 600\n[Next action]"
+   }
+  },
+  {
+   "name": "quotient:B,A,C",
+   "history": [
+    {
+     "tool": "get_hotel_price",
+     "args": {
+      "city": "SG",
+      "nights": 3
+     },
+     "obs": {
+      "price": 600
+     }
+    },
+    {
+     "tool": "get_flight_price",
+     "args": {
+      "from": "NYC",
+      "to": "SG"
+     },
+     "obs": {
+      "price": 1200
+     }
+    },
+    {
+     "tool": "calculate_total",
+     "args": {
+      "flight_price": 1200,
+      "hotel_price": 600
+     },
+     "obs": {
+      "total": 1800
+     }
+    }
+   ],
+   "variant": "quotient",
+   "expected": {
+    "system": "You are a tool-using agent. Read the task and the completed calls, then output the next action as one JSON object {\"tool\": ..., \"args\": {...}} and nothing else. Call finish when the task is complete.",
+    "user": "[Task] Find the price of a flight from NYC to SG and the price of 3 nights at a hotel in SG, then compute the total cost.\n[Tools]\n  calculate_total(flight_price, hotel_price): Compute the total cost\n  finish(answer): Submit the final answer\n  get_flight_price(from, to): Look up a flight price\n  get_hotel_price(city, nights): Look up a hotel price\n[Completed calls]\n  calculate_total(flight_price=1200, hotel_price=600) -> {\"total\":1800}\n  get_flight_price(from=\"NYC\", to=\"SG\") -> {\"price\":1200}\n  get_hotel_price(city=\"SG\", nights=3) -> {\"price\":600}\n[Available values]\n  calculate_total(flight_price=1200, hotel_price=600).total = 1800\n  get_flight_price(from=\"NYC\", to=\"SG\").price = 1200\n  get_hotel_price(city=\"SG\", nights=3).price = 600\n[Next action]"
+   }
+  },
+  {
+   "name": "quotient:noisy_B,A",
+   "history": [
+    {
+     "tool": "get_hotel_price",
+     "args": {
+      "city": "SG",
+      "nights": 3
+     },
+     "obs": {
+      "price": 600,
+      "request_id": "r-18"
+     }
+    },
+    {
+     "tool": "get_flight_price",
+     "args": {
+      "to": "SG",
+      "from": "NYC"
+     },
+     "obs": {
+      "price": 1200.0,
+      "request_id": "r-93"
+     }
+    }
+   ],
+   "variant": "quotient",
+   "expected": {
+    "system": "You are a tool-using agent. Read the task and the completed calls, then output the next action as one JSON object {\"tool\": ..., \"args\": {...}} and nothing else. Call finish when the task is complete.",
+    "user": "[Task] Find the price of a flight from NYC to SG and the price of 3 nights at a hotel in SG, then compute the total cost.\n[Tools]\n  calculate_total(flight_price, hotel_price): Compute the total cost\n  finish(answer): Submit the final answer\n  get_flight_price(from, to): Look up a flight price\n  get_hotel_price(city, nights): Look up a hotel price\n[Completed calls]\n  get_flight_price(from=\"NYC\", to=\"SG\") -> {\"price\":1200}\n  get_hotel_price(city=\"SG\", nights=3) -> {\"price\":600}\n[Available values]\n  get_flight_price(from=\"NYC\", to=\"SG\").price = 1200\n  get_hotel_price(city=\"SG\", nights=3).price = 600\n[Next action]"
+   }
+  },
+  {
+   "name": "chronological:empty",
+   "history": [],
+   "variant": "chronological",
+   "expected": {
+    "system": "You are a tool-using agent. Read the task and the completed calls, then output the next action as one JSON object {\"tool\": ..., \"args\": {...}} and nothing else. Call finish when the task is complete.",
+    "user": "[Task] Find the price of a flight from NYC to SG and the price of 3 nights at a hotel in SG, then compute the total cost.\n[Tools]\n  calculate_total(flight_price, hotel_price): Compute the total cost\n  finish(answer): Submit the final answer\n  get_flight_price(from, to): Look up a flight price\n  get_hotel_price(city, nights): Look up a hotel price\n[History]\n  (none)\n[Available values]\n  (none)\n[Next action]"
+   }
+  },
+  {
+   "name": "chronological:A",
+   "history": [
+    {
+     "tool": "get_flight_price",
+     "args": {
+      "from": "NYC",
+      "to": "SG"
+     },
+     "obs": {
+      "price": 1200
+     }
+    }
+   ],
+   "variant": "chronological",
+   "expected": {
+    "system": "You are a tool-using agent. Read the task and the completed calls, then output the next action as one JSON object {\"tool\": ..., \"args\": {...}} and nothing else. Call finish when the task is complete.",
+    "user": "[Task] Find the price of a flight from NYC to SG and the price of 3 nights at a hotel in SG, then compute the total cost.\n[Tools]\n  calculate_total(flight_price, hotel_price): Compute the total cost\n  finish(answer): Submit the final answer\n  get_flight_price(from, to): Look up a flight price\n  get_hotel_price(city, nights): Look up a hotel price\n[History]\n  1. get_flight_price(from=\"NYC\", to=\"SG\") -> {\"price\":1200}\n[Available values]\n  get_flight_price(from=\"NYC\", to=\"SG\").price = 1200\n[Next action]"
+   }
+  },
+  {
+   "name": "chronological:A,B",
+   "history": [
+    {
+     "tool": "get_flight_price",
+     "args": {
+      "from": "NYC",
+      "to": "SG"
+     },
+     "obs": {
+      "price": 1200
+     }
+    },
+    {
+     "tool": "get_hotel_price",
+     "args": {
+      "city": "SG",
+      "nights": 3
+     },
+     "obs": {
+      "price": 600
+     }
+    }
+   ],
+   "variant": "chronological",
+   "expected": {
+    "system": "You are a tool-using agent. Read the task and the completed calls, then output the next action as one JSON object {\"tool\": ..., \"args\": {...}} and nothing else. Call finish when the task is complete.",
+    "user": "[Task] Find the price of a flight from NYC to SG and the price of 3 nights at a hotel in SG, then compute the total cost.\n[Tools]\n  calculate_total(flight_price, hotel_price): Compute the total cost\n  finish(answer): Submit the final answer\n  get_flight_price(from, to): Look up a flight price\n  get_hotel_price(city, nights): Look up a hotel price\n[History]\n  1. get_flight_price(from=\"NYC\", to=\"SG\") -> {\"price\":1200}\n  2. get_hotel_price(city=\"SG\", nights=3) -> {\"price\":600}\n[Available values]\n  get_flight_price(from=\"NYC\", to=\"SG\").price = 1200\n  get_hotel_price(city=\"SG\", nights=3).price = 600\n[Next action]"
+   }
+  },
+  {
+   "name": "chronological:B,A",
+   "history": [
+    {
+     "tool": "get_hotel_price",
+     "args": {
+      "city": "SG",
+      "nights": 3
+     },
+     "obs": {
+      "price": 600
+     }
+    },
+    {
+     "tool": "get_flight_price",
+     "args": {
+      "from": "NYC",
+      "to": "SG"
+     },
+     "obs": {
+      "price": 1200
+     }
+    }
+   ],
+   "variant": "chronological",
+   "expected": {
+    "system": "You are a tool-using agent. Read the task and the completed calls, then output the next action as one JSON object {\"tool\": ..., \"args\": {...}} and nothing else. Call finish when the task is complete.",
+    "user": "[Task] Find the price of a flight from NYC to SG and the price of 3 nights at a hotel in SG, then compute the total cost.\n[Tools]\n  calculate_total(flight_price, hotel_price): Compute the total cost\n  finish(answer): Submit the final answer\n  get_flight_price(from, to): Look up a flight price\n  get_hotel_price(city, nights): Look up a hotel price\n[History]\n  1. get_hotel_price(city=\"SG\", nights=3) -> {\"price\":600}\n  2. get_flight_price(from=\"NYC\", to=\"SG\") -> {\"price\":1200}\n[Available values]\n  get_hotel_price(city=\"SG\", nights=3).price = 600\n  get_flight_price(from=\"NYC\", to=\"SG\").price = 1200\n[Next action]"
+   }
+  },
+  {
+   "name": "chronological:A,B,C",
+   "history": [
+    {
+     "tool": "get_flight_price",
+     "args": {
+      "from": "NYC",
+      "to": "SG"
+     },
+     "obs": {
+      "price": 1200
+     }
+    },
+    {
+     "tool": "get_hotel_price",
+     "args": {
+      "city": "SG",
+      "nights": 3
+     },
+     "obs": {
+      "price": 600
+     }
+    },
+    {
+     "tool": "calculate_total",
+     "args": {
+      "flight_price": 1200,
+      "hotel_price": 600
+     },
+     "obs": {
+      "total": 1800
+     }
+    }
+   ],
+   "variant": "chronological",
+   "expected": {
+    "system": "You are a tool-using agent. Read the task and the completed calls, then output the next action as one JSON object {\"tool\": ..., \"args\": {...}} and nothing else. Call finish when the task is complete.",
+    "user": "[Task] Find the price of a flight from NYC to SG and the price of 3 nights at a hotel in SG, then compute the total cost.\n[Tools]\n  calculate_total(flight_price, hotel_price): Compute the total cost\n  finish(answer): Submit the final answer\n  get_flight_price(from, to): Look up a flight price\n  get_hotel_price(city, nights): Look up a hotel price\n[History]\n  1. get_flight_price(from=\"NYC\", to=\"SG\") -> {\"price\":1200}\n  2. get_hotel_price(city=\"SG\", nights=3) -> {\"price\":600}\n  3. calculate_total(flight_price=1200, hotel_price=600) -> {\"total\":1800}\n[Available values]\n  get_flight_price(from=\"NYC\", to=\"SG\").price = 1200\n  get_hotel_price(city=\"SG\", nights=3).price = 600\n  calculate_total(flight_price=1200, hotel_price=600).total = 1800\n[Next action]"
+   }
+  },
+  {
+   "name": "truncation",
+   "task": {
+    "request": "Summarize the inbox.",
+    "tools": [
+     {
+      "name": "list_mail",
+      "params": [],
+      "description": "List mail"
+     }
+    ]
+   },
+   "contracts": {
+    "list_mail": {
+     "reads": [
+      "mail"
+     ],
+     "writes": []
+    }
+   },
+   "history": [
+    {
+     "tool": "list_mail",
+     "args": {},
+     "obs": {
+      "items": [
+       "a",
+       "b",
+       "c",
+       "d",
+       "e"
+      ],
+      "note": "abcdefghij",
+      "meta": {
+       "next page": 2
+      }
+     }
+    }
+   ],
+   "variant": "quotient",
+   "truncation": {
+    "max_list_items": 2,
+    "max_str_chars": 5
+   },
+   "expected": {
+    "system": "You are a tool-using agent. Read the task and the completed calls, then output the next action as one JSON object {\"tool\": ..., \"args\": {...}} and nothing else. Call finish when the task is complete.",
+    "user": "[Task] Summarize the inbox.\n[Tools]\n  list_mail(): List mail\n[Completed calls]\n  list_mail() -> {\"items\":[\"a\",\"b\",\"<+3 more>\"],\"meta\":{\"next page\":2},\"note\":\"abcde<+5 chars>\"}\n[Available values]\n  list_mail().items[0] = \"a\"\n  list_mail().items[1] = \"b\"\n  list_mail().items[2] = \"<+3 more>\"\n  list_mail().meta[\"next page\"] = 2\n  list_mail().note = \"abcde<+5 chars>\"\n[Next action]"
+   }
+  }
+ ],
+ "same_prompt_groups": [
+  [
+   "quotient:A,B",
+   "quotient:B,A",
+   "quotient:noisy_B,A"
+  ],
+  [
+   "quotient:A,B,C",
+   "quotient:B,A,C"
+  ]
+ ],
+ "running_targets_by_state": {
+  "": [
+   "{\"tool\":\"get_flight_price\",\"args\":{\"from\":\"NYC\",\"to\":\"SG\"}}",
+   "{\"tool\":\"get_hotel_price\",\"args\":{\"city\":\"SG\",\"nights\":3}}"
+  ],
+  "0": [
+   "{\"tool\":\"get_hotel_price\",\"args\":{\"city\":\"SG\",\"nights\":3}}"
+  ],
+  "1": [
+   "{\"tool\":\"get_flight_price\",\"args\":{\"from\":\"NYC\",\"to\":\"SG\"}}"
+  ],
+  "0,1": [
+   "{\"tool\":\"calculate_total\",\"args\":{\"flight_price\":1200,\"hotel_price\":600}}"
+  ],
+  "0,1,2": [
+   "{\"tool\":\"finish\",\"args\":{\"answer\":1800}}"
+  ]
+ }
+}

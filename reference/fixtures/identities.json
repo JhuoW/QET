@@ -1,0 +1,44 @@
+{
+ "description": "Numerical examples of the method page §5 and §7 (eq. 4 and eq. 5).",
+ "augmentation_eq4": {
+  "prefers_ABC": {
+   "logp": {
+    "|0": -0.6931471805599453,
+    "|1": -0.6931471805599453,
+    "0|1": -0.10536051565782628,
+    "1|0": -2.3025850929940455,
+    "0,1|2": 0.0,
+    "0,1,2|end": 0.0
+   },
+   "qet_root_objective": 0.6931471805599452,
+   "uniform_aug_objective": 1.897119984885881,
+   "entropy_omega": 0.6931471805599453,
+   "kl_omega_posterior": 0.5108256237659907
+  },
+  "balanced": {
+   "logp": {
+    "|0": -0.6931471805599453,
+    "|1": -0.6931471805599453,
+    "0|1": -0.6931471805599453,
+    "1|0": -0.6931471805599453,
+    "0,1|2": 0.0,
+    "0,1,2|end": 0.0
+   },
+   "qet_root_objective": 0.6931471805599453,
+   "uniform_aug_objective": 1.3862943611198906,
+   "entropy_omega": 0.6931471805599453,
+   "kl_omega_posterior": 0.0
+  }
+ },
+ "local_bound_eq5": {
+  "neglogB_root": 0.8365557638553015,
+  "local_upper_bound_root": 0.8770156536188258
+ },
+ "chronological_counterexample": {
+  "pi_C_after_A_then_B": 0.8,
+  "pi_C_after_B_then_A": 0.6,
+  "true_completion_probability": 0.3819,
+  "merged_with_0.8": 0.43320000000000003,
+  "merged_with_0.6": 0.32489999999999997
+ }
+}

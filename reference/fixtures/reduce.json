@@ -1,0 +1,603 @@
+{
+ "description": "Reduce (SPEC §5.1): entry names in H order. Every legal order of the seven-step graph must give the same names.",
+ "cases": [
+  {
+   "name": "seven_step_demo",
+   "history": [
+    {
+     "tool": "get_flight_price",
+     "args": {
+      "from": "NYC",
+      "to": "SG"
+     },
+     "obs": {
+      "price": 1200
+     }
+    },
+    {
+     "tool": "get_weather",
+     "args": {
+      "city": "SG"
+     },
+     "obs": {
+      "temp": 31
+     }
+    },
+    {
+     "tool": "get_balance",
+     "args": {
+      "account": 1
+     },
+     "obs": {
+      "balance": 2000
+     }
+    },
+    {
+     "tool": "get_hotel_price",
+     "args": {
+      "city": "SG",
+      "nights": 3
+     },
+     "obs": {
+      "price": 600
+     }
+    },
+    {
+     "tool": "pay",
+     "args": {
+      "account": 1,
+      "amount": 1200
+     },
+     "obs": {
+      "ok": true
+     }
+    },
+    {
+     "tool": "get_balance",
+     "args": {
+      "account": 1
+     },
+     "obs": {
+      "balance": 800
+     }
+    },
+    {
+     "tool": "book_flight",
+     "args": {
+      "from": "NYC",
+      "to": "SG"
+     },
+     "obs": {
+      "status": "booked"
+     }
+    }
+   ],
+   "contracts": {
+    "get_flight_price": {
+     "reads": [
+      "flights"
+     ],
+     "writes": []
+    },
+    "book_flight": {
+     "reads": [
+      "flights"
+     ],
+     "writes": [
+      "flights"
+     ]
+    },
+    "get_balance": {
+     "reads": [
+      "acct:{account}"
+     ],
+     "writes": []
+    },
+    "pay": {
+     "reads": [
+      "acct:{account}"
+     ],
+     "writes": [
+      "acct:{account}"
+     ]
+    },
+    "get_weather": {
+     "reads": [
+      "weather"
+     ],
+     "writes": []
+    },
+    "get_hotel_price": {
+     "reads": [
+      "hotels"
+     ],
+     "writes": []
+    }
+   },
+   "expected_names": [
+    "get_balance(account=1)",
+    "get_flight_price(from=\"NYC\", to=\"SG\")",
+    "book_flight(from=\"NYC\", to=\"SG\")",
+    "get_hotel_price(city=\"SG\", nights=3)",
+    "get_weather(city=\"SG\")",
+    "pay(account=1, amount=1200)",
+    "get_balance(account=1)#2"
+   ]
+  },
+  {
+   "name": "update_order",
+   "history": [
+    {
+     "tool": "update_order",
+     "args": {
+      "id": 7,
+      "status": "paid"
+     },
+     "obs": {
+      "ok": true
+     }
+    },
+    {
+     "tool": "get_flight_price",
+     "args": {
+      "from": "NYC",
+      "to": "SG"
+     },
+     "obs": {
+      "price": 1200
+     }
+    },
+    {
+     "tool": "update_order",
+     "args": {
+      "id": 7,
+      "status": "shipped"
+     },
+     "obs": {
+      "ok": true
+     }
+    },
+    {
+     "tool": "get_order",
+     "args": {
+      "id": 7
+     },
+     "obs": {
+      "status": "shipped"
+     }
+    }
+   ],
+   "contracts": {
+    "update_order": {
+     "reads": [
+      "order:{id}"
+     ],
+     "writes": [
+      "order:{id}"
+     ]
+    },
+    "get_order": {
+     "reads": [
+      "order:{id}"
+     ],
+     "writes": []
+    },
+    "get_flight_price": {
+     "reads": [
+      "flights"
+     ],
+     "writes": []
+    }
+   },
+   "expected_names": [
+    "get_flight_price(from=\"NYC\", to=\"SG\")",
+    "update_order(id=7, status=\"paid\")",
+    "update_order(id=7, status=\"shipped\")",
+    "get_order(id=7)"
+   ]
+  },
+  {
+   "name": "noisy_inference_history",
+   "history": [
+    {
+     "tool": "get_hotel_price",
+     "args": {
+      "city": "SG",
+      "nights": 3
+     },
+     "obs": {
+      "price": 600,
+      "request_id": "r-18"
+     }
+    },
+    {
+     "tool": "get_flight_price",
+     "args": {
+      "to": "SG",
+      "from": "NYC"
+     },
+     "obs": {
+      "price": 1200.0,
+      "request_id": "r-93"
+     }
+    }
+   ],
+   "contracts": {
+    "get_flight_price": {
+     "reads": [
+      "flights"
+     ],
+     "writes": [],
+     "volatile": [
+      "request_id"
+     ]
+    },
+    "get_hotel_price": {
+     "reads": [
+      "hotels"
+     ],
+     "writes": [],
+     "volatile": [
+      "request_id"
+     ]
+    },
+    "calculate_total": {
+     "reads": [],
+     "writes": []
+    }
+   },
+   "expected_names": [
+    "get_flight_price(from=\"NYC\", to=\"SG\")",
+    "get_hotel_price(city=\"SG\", nights=3)"
+   ],
+   "expected_obs": [
+    {
+     "price": 1200
+    },
+    {
+     "price": 600
+    }
+   ]
+  }
+ ],
+ "seven_step_legal_orders": {
+  "steps": [
+   {
+    "tool": "get_flight_price",
+    "args": {
+     "from": "NYC",
+     "to": "SG"
+    },
+    "obs": {
+     "price": 1200
+    }
+   },
+   {
+    "tool": "get_weather",
+    "args": {
+     "city": "SG"
+    },
+    "obs": {
+     "temp": 31
+    }
+   },
+   {
+    "tool": "get_balance",
+    "args": {
+     "account": 1
+    },
+    "obs": {
+     "balance": 2000
+    }
+   },
+   {
+    "tool": "get_hotel_price",
+    "args": {
+     "city": "SG",
+     "nights": 3
+    },
+    "obs": {
+     "price": 600
+    }
+   },
+   {
+    "tool": "pay",
+    "args": {
+     "account": 1,
+     "amount": 1200
+    },
+    "obs": {
+     "ok": true
+    }
+   },
+   {
+    "tool": "get_balance",
+    "args": {
+     "account": 1
+    },
+    "obs": {
+     "balance": 800
+    }
+   },
+   {
+    "tool": "book_flight",
+    "args": {
+     "from": "NYC",
+     "to": "SG"
+    },
+    "obs": {
+     "status": "booked"
+    }
+   }
+  ],
+  "contracts": {
+   "get_flight_price": {
+    "reads": [
+     "flights"
+    ],
+    "writes": []
+   },
+   "book_flight": {
+    "reads": [
+     "flights"
+    ],
+    "writes": [
+     "flights"
+    ]
+   },
+   "get_balance": {
+    "reads": [
+     "acct:{account}"
+    ],
+    "writes": []
+   },
+   "pay": {
+    "reads": [
+     "acct:{account}"
+    ],
+    "writes": [
+     "acct:{account}"
+    ]
+   },
+   "get_weather": {
+    "reads": [
+     "weather"
+    ],
+    "writes": []
+   },
+   "get_hotel_price": {
+    "reads": [
+     "hotels"
+    ],
+    "writes": []
+   }
+  },
+  "orders": [
+   [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   [
+    0,
+    1,
+    3,
+    2,
+    4,
+    5,
+    6
+   ],
+   [
+    0,
+    2,
+    1,
+    3,
+    4,
+    5,
+    6
+   ],
+   [
+    0,
+    2,
+    3,
+    1,
+    4,
+    5,
+    6
+   ],
+   [
+    0,
+    3,
+    1,
+    2,
+    4,
+    5,
+    6
+   ],
+   [
+    0,
+    3,
+    2,
+    1,
+    4,
+    5,
+    6
+   ],
+   [
+    1,
+    0,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   [
+    1,
+    0,
+    3,
+    2,
+    4,
+    5,
+    6
+   ],
+   [
+    1,
+    2,
+    0,
+    3,
+    4,
+    5,
+    6
+   ],
+   [
+    1,
+    2,
+    3,
+    0,
+    4,
+    5,
+    6
+   ],
+   [
+    1,
+    3,
+    0,
+    2,
+    4,
+    5,
+    6
+   ],
+   [
+    1,
+    3,
+    2,
+    0,
+    4,
+    5,
+    6
+   ],
+   [
+    2,
+    0,
+    1,
+    3,
+    4,
+    5,
+    6
+   ],
+   [
+    2,
+    0,
+    3,
+    1,
+    4,
+    5,
+    6
+   ],
+   [
+    2,
+    1,
+    0,
+    3,
+    4,
+    5,
+    6
+   ],
+   [
+    2,
+    1,
+    3,
+    0,
+    4,
+    5,
+    6
+   ],
+   [
+    2,
+    3,
+    0,
+    1,
+    4,
+    5,
+    6
+   ],
+   [
+    2,
+    3,
+    1,
+    0,
+    4,
+    5,
+    6
+   ],
+   [
+    3,
+    0,
+    1,
+    2,
+    4,
+    5,
+    6
+   ],
+   [
+    3,
+    0,
+    2,
+    1,
+    4,
+    5,
+    6
+   ],
+   [
+    3,
+    1,
+    0,
+    2,
+    4,
+    5,
+    6
+   ],
+   [
+    3,
+    1,
+    2,
+    0,
+    4,
+    5,
+    6
+   ],
+   [
+    3,
+    2,
+    0,
+    1,
+    4,
+    5,
+    6
+   ],
+   [
+    3,
+    2,
+    1,
+    0,
+    4,
+    5,
+    6
+   ]
+  ],
+  "expected_names": [
+   "get_balance(account=1)",
+   "get_flight_price(from=\"NYC\", to=\"SG\")",
+   "book_flight(from=\"NYC\", to=\"SG\")",
+   "get_hotel_price(city=\"SG\", nights=3)",
+   "get_weather(city=\"SG\")",
+   "pay(account=1, amount=1200)",
+   "get_balance(account=1)#2"
+  ]
+ }
+}

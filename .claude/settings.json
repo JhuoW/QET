@@ -1,0 +1,70 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(/third_party/**)",
+      "Edit(/results/raw/**)",
+      "Read(/.env)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean *)"
+    ],
+    "ask": [
+      "Bash(rm *)",
+      "Bash(git push *)",
+      "Bash(sbatch *)",
+      "Bash(srun *)",
+      "Bash(salloc *)",
+      "Bash(qsub *)",
+      "Bash(huggingface-cli upload *)",
+      "Bash(hf upload *)"
+    ],
+    "allow": [
+      "Bash(make lint)",
+      "Bash(make test-fast)",
+      "Bash(make test)",
+      "Bash(pytest *)",
+      "Bash(python -m pytest *)",
+      "Bash(python3 -m pytest *)",
+      "Bash(ruff *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect_paths.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard_bash.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop_checks.py",
+            "timeout": 300
+          }
+        ]
+      }
+    ]
+  }
+}

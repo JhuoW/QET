@@ -1,0 +1,1177 @@
+{
+ "description": "Compile rules (SPEC §4). Edges are [u, v, sorted labels] with u earlier than v.",
+ "cases": [
+  {
+   "name": "running",
+   "note": "Method page §4 worked example: A->C, B->C (data).",
+   "input": {
+    "request": "Find the price of a flight from NYC to SG and the price of 3 nights at a hotel in SG, then compute the total cost.",
+    "steps": [
+     {
+      "tool": "get_flight_price",
+      "args": {
+       "from": "NYC",
+       "to": "SG"
+      },
+      "obs": {
+       "price": 1200
+      }
+     },
+     {
+      "tool": "get_hotel_price",
+      "args": {
+       "city": "SG",
+       "nights": 3
+      },
+      "obs": {
+       "price": 600
+      }
+     },
+     {
+      "tool": "calculate_total",
+      "args": {
+       "flight_price": 1200,
+       "hotel_price": 600
+      },
+      "obs": {
+       "total": 1800
+      }
+     }
+    ],
+    "contracts": {
+     "get_flight_price": {
+      "reads": [
+       "flights"
+      ],
+      "writes": [],
+      "volatile": [
+       "request_id"
+      ]
+     },
+     "get_hotel_price": {
+      "reads": [
+       "hotels"
+      ],
+      "writes": [],
+      "volatile": [
+       "request_id"
+      ]
+     },
+     "calculate_total": {
+      "reads": [],
+      "writes": []
+     }
+    }
+   },
+   "expected_edges": [
+    [
+     0,
+     2,
+     [
+      "data"
+     ]
+    ],
+    [
+     1,
+     2,
+     [
+      "data"
+     ]
+    ]
+   ],
+   "expected_canonical_order": [
+    0,
+    1,
+    2
+   ],
+   "expected_n_states": 5,
+   "expected_n_orders": 2
+  },
+  {
+   "name": "seven_step",
+   "note": "Method page §5 seven-step booking example; pay and book_flight are writes (rule 3).",
+   "input": {
+    "request": "Check the flight price from NYC to SG, the hotel price for 3 nights in SG and the weather in SG; pay for the flight from account 1, check the balance of account 1 before and after paying, and finally book the flight.",
+    "steps": [
+     {
+      "tool": "get_flight_price",
+      "args": {
+       "from": "NYC",
+       "to": "SG"
+      },
+      "obs": {
+       "price": 1200
+      }
+     },
+     {
+      "tool": "get_weather",
+      "args": {
+       "city": "SG"
+      },
+      "obs": {
+       "temp": 31
+      }
+     },
+     {
+      "tool": "get_balance",
+      "args": {
+       "account": 1
+      },
+      "obs": {
+       "balance": 2000
+      }
+     },
+     {
+      "tool": "get_hotel_price",
+      "args": {
+       "city": "SG",
+       "nights": 3
+      },
+      "obs": {
+       "price": 600
+      }
+     },
+     {
+      "tool": "pay",
+      "args": {
+       "account": 1,
+       "amount": 1200
+      },
+      "obs": {
+       "ok": true
+      }
+     },
+     {
+      "tool": "get_balance",
+      "args": {
+       "account": 1
+      },
+      "obs": {
+       "balance": 800
+      }
+     },
+     {
+      "tool": "book_flight",
+      "args": {
+       "from": "NYC",
+       "to": "SG"
+      },
+      "obs": {
+       "status": "booked"
+      }
+     }
+    ],
+    "contracts": {
+     "get_flight_price": {
+      "reads": [
+       "flights"
+      ],
+      "writes": []
+     },
+     "book_flight": {
+      "reads": [
+       "flights"
+      ],
+      "writes": [
+       "flights"
+      ]
+     },
+     "get_balance": {
+      "reads": [
+       "acct:{account}"
+      ],
+      "writes": []
+     },
+     "pay": {
+      "reads": [
+       "acct:{account}"
+      ],
+      "writes": [
+       "acct:{account}"
+      ]
+     },
+     "get_weather": {
+      "reads": [
+       "weather"
+      ],
+      "writes": []
+     },
+     "get_hotel_price": {
+      "reads": [
+       "hotels"
+      ],
+      "writes": []
+     }
+    }
+   },
+   "expected_edges": [
+    [
+     0,
+     4,
+     [
+      "data",
+      "decision"
+     ]
+    ],
+    [
+     0,
+     6,
+     [
+      "decision",
+      "effect"
+     ]
+    ],
+    [
+     1,
+     4,
+     [
+      "decision"
+     ]
+    ],
+    [
+     1,
+     6,
+     [
+      "decision"
+     ]
+    ],
+    [
+     2,
+     4,
+     [
+      "decision",
+      "effect"
+     ]
+    ],
+    [
+     2,
+     5,
+     [
+      "dup"
+     ]
+    ],
+    [
+     2,
+     6,
+     [
+      "decision"
+     ]
+    ],
+    [
+     3,
+     4,
+     [
+      "decision"
+     ]
+    ],
+    [
+     3,
+     6,
+     [
+      "decision"
+     ]
+    ],
+    [
+     4,
+     5,
+     [
+      "effect"
+     ]
+    ],
+    [
+     4,
+     6,
+     [
+      "decision"
+     ]
+    ],
+    [
+     5,
+     6,
+     [
+      "decision"
+     ]
+    ]
+   ],
+   "expected_canonical_order": [
+    2,
+    0,
+    3,
+    1,
+    4,
+    5,
+    6
+   ],
+   "expected_n_states": 19,
+   "expected_n_orders": 24
+  },
+  {
+   "name": "update_order",
+   "note": "Two writes to order:7 keep their order (rule 2); the read after them too.",
+   "input": {
+    "request": "Mark order 7 as paid, check the NYC to SG flight price, mark order 7 as shipped, then read order 7.",
+    "steps": [
+     {
+      "tool": "update_order",
+      "args": {
+       "id": 7,
+       "status": "paid"
+      },
+      "obs": {
+       "ok": true
+      }
+     },
+     {
+      "tool": "get_flight_price",
+      "args": {
+       "from": "NYC",
+       "to": "SG"
+      },
+      "obs": {
+       "price": 1200
+      }
+     },
+     {
+      "tool": "update_order",
+      "args": {
+       "id": 7,
+       "status": "shipped"
+      },
+      "obs": {
+       "ok": true
+      }
+     },
+     {
+      "tool": "get_order",
+      "args": {
+       "id": 7
+      },
+      "obs": {
+       "status": "shipped"
+      }
+     }
+    ],
+    "contracts": {
+     "update_order": {
+      "reads": [
+       "order:{id}"
+      ],
+      "writes": [
+       "order:{id}"
+      ]
+     },
+     "get_order": {
+      "reads": [
+       "order:{id}"
+      ],
+      "writes": []
+     },
+     "get_flight_price": {
+      "reads": [
+       "flights"
+      ],
+      "writes": []
+     }
+    }
+   },
+   "expected_edges": [
+    [
+     0,
+     2,
+     [
+      "decision",
+      "effect"
+     ]
+    ],
+    [
+     0,
+     3,
+     [
+      "effect"
+     ]
+    ],
+    [
+     1,
+     2,
+     [
+      "decision"
+     ]
+    ],
+    [
+     2,
+     3,
+     [
+      "effect"
+     ]
+    ]
+   ],
+   "expected_canonical_order": [
+    1,
+    0,
+    2,
+    3
+   ],
+   "expected_n_states": 6,
+   "expected_n_orders": 2
+  },
+  {
+   "name": "data_multi_match",
+   "note": "A value produced by two earlier calls creates an edge from each of them.",
+   "input": {
+    "request": "Compute h.",
+    "steps": [
+     {
+      "tool": "f",
+      "args": {},
+      "obs": {
+       "x": 5
+      }
+     },
+     {
+      "tool": "g",
+      "args": {},
+      "obs": {
+       "y": 5
+      }
+     },
+     {
+      "tool": "h",
+      "args": {
+       "a": 5
+      },
+      "obs": {
+       "z": 1
+      }
+     }
+    ],
+    "contracts": {
+     "f": {
+      "reads": [],
+      "writes": []
+     },
+     "g": {
+      "reads": [],
+      "writes": []
+     },
+     "h": {
+      "reads": [],
+      "writes": []
+     }
+    }
+   },
+   "expected_edges": [
+    [
+     0,
+     2,
+     [
+      "data"
+     ]
+    ],
+    [
+     1,
+     2,
+     [
+      "data"
+     ]
+    ]
+   ],
+   "expected_canonical_order": [
+    0,
+    1,
+    2
+   ],
+   "expected_n_states": 5,
+   "expected_n_orders": 2
+  },
+  {
+   "name": "data_underived",
+   "note": "A value in neither the request nor any earlier output depends on every earlier call.",
+   "input": {
+    "request": "Compute h.",
+    "steps": [
+     {
+      "tool": "f",
+      "args": {},
+      "obs": {
+       "x": 5
+      }
+     },
+     {
+      "tool": "g",
+      "args": {},
+      "obs": {
+       "y": 5
+      }
+     },
+     {
+      "tool": "h",
+      "args": {
+       "a": 99
+      },
+      "obs": {
+       "z": 1
+      }
+     }
+    ],
+    "contracts": {
+     "f": {
+      "reads": [],
+      "writes": []
+     },
+     "g": {
+      "reads": [],
+      "writes": []
+     },
+     "h": {
+      "reads": [],
+      "writes": []
+     }
+    }
+   },
+   "expected_edges": [
+    [
+     0,
+     2,
+     [
+      "data"
+     ]
+    ],
+    [
+     1,
+     2,
+     [
+      "data"
+     ]
+    ]
+   ],
+   "expected_canonical_order": [
+    0,
+    1,
+    2
+   ],
+   "expected_n_states": 5,
+   "expected_n_orders": 2
+  },
+  {
+   "name": "data_from_request",
+   "note": "A value found in the request is available from the start: no edge.",
+   "input": {
+    "request": "Compute h of 99.",
+    "steps": [
+     {
+      "tool": "f",
+      "args": {},
+      "obs": {
+       "x": 5
+      }
+     },
+     {
+      "tool": "g",
+      "args": {},
+      "obs": {
+       "y": 5
+      }
+     },
+     {
+      "tool": "h",
+      "args": {
+       "a": 99
+      },
+      "obs": {
+       "z": 1
+      }
+     }
+    ],
+    "contracts": {
+     "f": {
+      "reads": [],
+      "writes": []
+     },
+     "g": {
+      "reads": [],
+      "writes": []
+     },
+     "h": {
+      "reads": [],
+      "writes": []
+     }
+    }
+   },
+   "expected_edges": [],
+   "expected_canonical_order": [
+    0,
+    1,
+    2
+   ],
+   "expected_n_states": 8,
+   "expected_n_orders": 6
+  },
+  {
+   "name": "start_values",
+   "note": "Adapter-declared start values (D-005) behave like request values.",
+   "input": {
+    "request": "Compute h.",
+    "steps": [
+     {
+      "tool": "f",
+      "args": {},
+      "obs": {
+       "x": 5
+      }
+     },
+     {
+      "tool": "g",
+      "args": {},
+      "obs": {
+       "y": 5
+      }
+     },
+     {
+      "tool": "h",
+      "args": {
+       "a": 99
+      },
+      "obs": {
+       "z": 1
+      }
+     }
+    ],
+    "contracts": {
+     "f": {
+      "reads": [],
+      "writes": []
+     },
+     "g": {
+      "reads": [],
+      "writes": []
+     },
+     "h": {
+      "reads": [],
+      "writes": []
+     }
+    },
+    "start_values": [
+     99
+    ]
+   },
+   "expected_edges": [],
+   "expected_canonical_order": [
+    0,
+    1,
+    2
+   ],
+   "expected_n_states": 8,
+   "expected_n_orders": 6
+  },
+  {
+   "name": "initial_observation",
+   "note": "Leaves of the initial observation are available from the start.",
+   "input": {
+    "request": "Compute h.",
+    "steps": [
+     {
+      "tool": "f",
+      "args": {},
+      "obs": {
+       "x": 5
+      }
+     },
+     {
+      "tool": "g",
+      "args": {},
+      "obs": {
+       "y": 5
+      }
+     },
+     {
+      "tool": "h",
+      "args": {
+       "a": 42
+      },
+      "obs": {
+       "z": 1
+      }
+     }
+    ],
+    "contracts": {
+     "f": {
+      "reads": [],
+      "writes": []
+     },
+     "g": {
+      "reads": [],
+      "writes": []
+     },
+     "h": {
+      "reads": [],
+      "writes": []
+     }
+    },
+    "initial_observation": {
+     "inbox": [
+      {
+       "id": 42
+      }
+     ]
+    }
+   },
+   "expected_edges": [],
+   "expected_canonical_order": [
+    0,
+    1,
+    2
+   ],
+   "expected_n_states": 8,
+   "expected_n_orders": 6
+  },
+  {
+   "name": "decision",
+   "note": "A write never moves ahead of any earlier call (rule 3), even without a conflict.",
+   "input": {
+    "request": "Read r1 then write r2.",
+    "steps": [
+     {
+      "tool": "read1",
+      "args": {},
+      "obs": {
+       "v": 1
+      }
+     },
+     {
+      "tool": "write2",
+      "args": {},
+      "obs": {
+       "ok": true
+      }
+     }
+    ],
+    "contracts": {
+     "read1": {
+      "reads": [
+       "r1"
+      ],
+      "writes": []
+     },
+     "write2": {
+      "reads": [],
+      "writes": [
+       "r2"
+      ]
+     }
+    }
+   },
+   "expected_edges": [
+    [
+     0,
+     1,
+     [
+      "decision"
+     ]
+    ]
+   ],
+   "expected_canonical_order": [
+    0,
+    1
+   ],
+   "expected_n_states": 3,
+   "expected_n_orders": 1
+  },
+  {
+   "name": "unknown_tool",
+   "note": "A tool without a contract reads and writes everything.",
+   "input": {
+    "request": "Go.",
+    "steps": [
+     {
+      "tool": "read1",
+      "args": {},
+      "obs": {
+       "v": 1
+      }
+     },
+     {
+      "tool": "mystery",
+      "args": {},
+      "obs": {
+       "v": 2
+      }
+     },
+     {
+      "tool": "read3",
+      "args": {},
+      "obs": {
+       "v": 3
+      }
+     }
+    ],
+    "contracts": {
+     "read1": {
+      "reads": [
+       "r1"
+      ],
+      "writes": []
+     },
+     "read3": {
+      "reads": [
+       "r3"
+      ],
+      "writes": []
+     }
+    }
+   },
+   "expected_edges": [
+    [
+     0,
+     1,
+     [
+      "decision",
+      "effect"
+     ]
+    ],
+    [
+     1,
+     2,
+     [
+      "effect"
+     ]
+    ]
+   ],
+   "expected_canonical_order": [
+    0,
+    1,
+    2
+   ],
+   "expected_n_states": 4,
+   "expected_n_orders": 1
+  },
+  {
+   "name": "pure_after_unknown",
+   "note": "A pure tool (no reads, no writes) commutes even with an unknown tool.",
+   "input": {
+    "request": "Go with 4.",
+    "steps": [
+     {
+      "tool": "mystery",
+      "args": {},
+      "obs": {
+       "v": 2
+      }
+     },
+     {
+      "tool": "calc",
+      "args": {
+       "a": 4
+      },
+      "obs": {
+       "v": 8
+      }
+     }
+    ],
+    "contracts": {
+     "calc": {
+      "reads": [],
+      "writes": []
+     }
+    }
+   },
+   "expected_edges": [],
+   "expected_canonical_order": [
+    1,
+    0
+   ],
+   "expected_n_states": 4,
+   "expected_n_orders": 2
+  },
+  {
+   "name": "glob_resource",
+   "note": "Resource patterns use * as a glob: order:* meets order:7.",
+   "input": {
+    "request": "List orders, then update order 7.",
+    "steps": [
+     {
+      "tool": "list_orders",
+      "args": {},
+      "obs": {
+       "ids": [
+        7,
+        8
+       ]
+      }
+     },
+     {
+      "tool": "update_order",
+      "args": {
+       "id": 7
+      },
+      "obs": {
+       "ok": true
+      }
+     }
+    ],
+    "contracts": {
+     "list_orders": {
+      "reads": [
+       "order:*"
+      ],
+      "writes": []
+     },
+     "update_order": {
+      "reads": [
+       "order:{id}"
+      ],
+      "writes": [
+       "order:{id}"
+      ]
+     }
+    }
+   },
+   "expected_edges": [
+    [
+     0,
+     1,
+     [
+      "decision",
+      "effect"
+     ]
+    ]
+   ],
+   "expected_canonical_order": [
+    0,
+    1
+   ],
+   "expected_n_states": 3,
+   "expected_n_orders": 1
+  },
+  {
+   "name": "volatile_is_not_a_source",
+   "note": "Volatile fields are dropped before matching, so a value taken from one is underived.",
+   "input": {
+    "request": "Go.",
+    "steps": [
+     {
+      "tool": "f",
+      "args": {},
+      "obs": {
+       "id": 41,
+       "ts": "2026-10-16T10:00:00Z"
+      }
+     },
+     {
+      "tool": "g",
+      "args": {},
+      "obs": {
+       "id": 42
+      }
+     },
+     {
+      "tool": "h",
+      "args": {
+       "t": "2026-10-16T10:00:00Z"
+      },
+      "obs": {
+       "ok": true
+      }
+     }
+    ],
+    "contracts": {
+     "f": {
+      "reads": [],
+      "writes": [],
+      "volatile": [
+       "ts"
+      ]
+     },
+     "g": {
+      "reads": [],
+      "writes": []
+     },
+     "h": {
+      "reads": [],
+      "writes": []
+     }
+    }
+   },
+   "expected_edges": [
+    [
+     0,
+     2,
+     [
+      "data"
+     ]
+    ],
+    [
+     1,
+     2,
+     [
+      "data"
+     ]
+    ]
+   ],
+   "expected_canonical_order": [
+    0,
+    1,
+    2
+   ],
+   "expected_n_states": 5,
+   "expected_n_orders": 2
+  },
+  {
+   "name": "task_constraint",
+   "note": "Rule 5: an annotated task order adds an edge.",
+   "input": {
+    "request": "Back up, then edit.",
+    "steps": [
+     {
+      "tool": "backup",
+      "args": {},
+      "obs": {
+       "ok": true
+      }
+     },
+     {
+      "tool": "lookup",
+      "args": {},
+      "obs": {
+       "v": 1
+      }
+     }
+    ],
+    "contracts": {
+     "backup": {
+      "reads": [
+       "files"
+      ],
+      "writes": []
+     },
+     "lookup": {
+      "reads": [
+       "db"
+      ],
+      "writes": []
+     }
+    },
+    "task_order": [
+     [
+      0,
+      1
+     ]
+    ]
+   },
+   "expected_edges": [
+    [
+     0,
+     1,
+     [
+      "task"
+     ]
+    ]
+   ],
+   "expected_canonical_order": [
+    0,
+    1
+   ],
+   "expected_n_states": 3,
+   "expected_n_orders": 1
+  },
+  {
+   "name": "duplicate_reads",
+   "note": "Rule 4: identical calls keep their order.",
+   "input": {
+    "request": "Read x=1 twice.",
+    "steps": [
+     {
+      "tool": "get",
+      "args": {
+       "x": 1
+      },
+      "obs": {
+       "v": 1
+      }
+     },
+     {
+      "tool": "get",
+      "args": {
+       "x": 1
+      },
+      "obs": {
+       "v": 1
+      }
+     }
+    ],
+    "contracts": {
+     "get": {
+      "reads": [
+       "r"
+      ],
+      "writes": []
+     }
+    }
+   },
+   "expected_edges": [
+    [
+     0,
+     1,
+     [
+      "dup"
+     ]
+    ]
+   ],
+   "expected_canonical_order": [
+    0,
+    1
+   ],
+   "expected_n_states": 3,
+   "expected_n_orders": 1
+  },
+  {
+   "name": "bool_is_matched",
+   "note": "Booleans are values too: true produced earlier creates a data edge (conservative, D-005).",
+   "input": {
+    "request": "Check, then act.",
+    "steps": [
+     {
+      "tool": "check",
+      "args": {},
+      "obs": {
+       "ok": true
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "flag": true
+      },
+      "obs": {
+       "v": 1
+      }
+     }
+    ],
+    "contracts": {
+     "check": {
+      "reads": [],
+      "writes": []
+     },
+     "act": {
+      "reads": [],
+      "writes": []
+     }
+    }
+   },
+   "expected_edges": [
+    [
+     0,
+     1,
+     [
+      "data"
+     ]
+    ]
+   ],
+   "expected_canonical_order": [
+    0,
+    1
+   ],
+   "expected_n_states": 3,
+   "expected_n_orders": 1
+  }
+ ]
+}
