@@ -23,6 +23,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-015 | Proposed | Resource glob semantics and contract validation |
 | D-016 | Proposed | Graph record and compile report details |
 | D-017 | Proposed | Renderer details left open by SPEC §5 |
+| D-018 | Proposed | Lattice and weight details left open by SPEC §6, §8 |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -128,6 +129,20 @@ message is exactly the `[Task]` and `[Tools]` lines. The facade returns `{"syste
 turns after the system message); training and inference use `render_messages`. (c) Truncation settings are
 validated: only `max_list_items` and `max_str_chars`, each a non-negative int or null. (d) Tools need `name`,
 `params` (a list of names) and `description`. Default: as described; cheap to reverse (one module).
+
+### D-018 Lattice and weight details left open by SPEC §6, §8
+`src/qet/core/lattice.py`, `weights.py`. (a) Sub-lattice seed: the first 8 bytes of
+sha256("qet-sublattice", graph id, epoch, run seed) seed a `random.Random`, which picks uniformly from the ascending
+list of ready nodes (the oracle's rule), so S is identical across processes and configurations (D-013). K has no
+default; it comes from the run config and goes into the manifest. (b) Explicit state sets are validated: they
+contain the empty state and V, consist of downsets, and every state lies on a chain from the empty state to V
+inside S (true of the full lattice and of prefix sets of complete orders); so every layer is non-empty and the
+finish weight of the flow-based methods is 1. (c) The orders given to `path_sft` and `sampled_paths` must be
+topological orders that stay inside S. (d) A state with occupancy 0 sends no flow and is skipped in the frontier
+objective, so unreachable states never produce NaN; a reached state with B(I) = 0 (or, for frontier, with zero
+mass on every ready action) raises, because the objective is infinite there. (e) logsumexp sums with `math.fsum`.
+(f) The facade's `lattice_summary` enumerates the full lattice when no states are given, up to 2^16 states.
+Default: as described; cheap to reverse.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
