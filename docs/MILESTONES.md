@@ -44,8 +44,11 @@ Goal: `src/qet/core` reproduces every fixture; property tests hold on random ins
   0 errors, 0 skipped).
   evidence: `pytest reference -q` → 134 passed (0 failed, 0 errors, 0 skipped); `make test` → 279 passed;
   `make lint` → exit 0; spec-reviewer: no blocking findings; commit 903897a (work: be7917b)
-- [ ] **E0.7 Review.** Run the spec-reviewer (fresh context) on `src/qet/core`; fix or answer every blocking
+- [x] **E0.7 Review.** Run the spec-reviewer (fresh context) on `src/qet/core`; fix or answer every blocking
   finding (answers go to DECISIONS.md). Accept: review report saved to `docs/reports/E0-review.md`.
+  evidence: `docs/reports/E0-review.md` saved: end-of-E0 review at ce7ef3e and follow-ups at 73e7413 and f11fbce,
+  each "no blocking findings"; should-fix items fixed (73e7413, f11fbce), the rest recorded in D-015-D-020 and
+  Q7-Q15; `pytest reference -q` → 134 passed; `make test` → 292 passed; `make lint` → exit 0; commit b604c87
 - [ ] **GATE E0** (optional but recommended): the human reads the core diff and the review.
 
 ## E1 — Training and inference stack on a tiny model (SPEC §6.5–§7; 1 GPU)
