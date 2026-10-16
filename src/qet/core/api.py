@@ -1,6 +1,7 @@
 """Thin JSON-in/JSON-out test facade used by reference/acceptance (SPEC §10).
 
-Internals are free; these wrappers only convert between JSON and the core types.
+Internals are free; these wrappers only convert between JSON and the core types. Production code (training,
+inference) calls the core modules directly.
 """
 
 from __future__ import annotations
@@ -14,16 +15,21 @@ from qet.core.canonical import JSON
 from qet.core.reduce import name_calls
 from qet.core.reduce import reduce as reduce_history
 
+FULL_LATTICE_CAP = 1 << 16  # the facade enumerates the full lattice when no states are given; beyond this, pass states
+
 
 def canonical_json(value: JSON) -> str:
+    """canon_json (SPEC §2)."""
     return canonical.canon_json(value)
 
 
 def action_string(tool: str, args: Mapping[str, JSON]) -> str:
+    """The tool-first target string of a call (SPEC §2, D-001)."""
     return canonical.action_string(tool, args)
 
 
 def show_call(tool: str, args: Mapping[str, JSON]) -> str:
+    """The display name `tool(k=v, ...)` of a call (SPEC §2)."""
     return canonical.show_call(tool, args)
 
 
@@ -69,9 +75,6 @@ def render(
         return {"system": msgs[0]["content"], "messages": msgs[1:]}
     p = rendering.render(task, history, contracts, variant, truncation)
     return {"system": p.system, "user": p.user}
-
-
-FULL_LATTICE_CAP = 1 << 16  # the facade enumerates the full lattice when no states are given; beyond this, pass states
 
 
 def lattice_summary(
