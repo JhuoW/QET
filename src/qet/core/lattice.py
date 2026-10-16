@@ -10,11 +10,13 @@ from __future__ import annotations
 import hashlib
 import math
 import random
+import re
 from collections import Counter, deque
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 S_MAX = 256  # default state cap before switching to the sub-lattice (SPEC §6.1)
+_NODE_ID = re.compile(r"0|[1-9][0-9]*")  # canonical node id in facade keys
 END = -1  # node id of the finish action in edge keys
 
 EdgeKey = tuple[int, int]  # (state, node) or (V, END)
@@ -301,19 +303,20 @@ def state_of(nodes: Iterable[int], n: int) -> int:
 
 
 def parse_state_key(key: str) -> int:
-    """Inverse of `state_key`; only the canonical spelling (ascending ids, no spaces) is accepted."""
-    try:
-        state = sum(1 << int(part) for part in key.split(",")) if key else 0
-    except ValueError:
-        raise ValueError(f"invalid state key {key!r}") from None
-    if state_key(state) != key:
-        raise ValueError(f"state key {key!r} is not canonical (expected {state_key(state)!r})")
-    return state
+    """Inverse of `state_key`; only the canonical spelling (ascending ASCII ids without leading zeros or spaces) is
+    accepted, so one state has one key."""
+    parts = key.split(",") if key else []
+    if not all(_NODE_ID.fullmatch(part) for part in parts):
+        raise ValueError(f"invalid state key {key!r}")
+    ids = [int(part) for part in parts]
+    if any(a >= b for a, b in zip(ids, ids[1:], strict=False)):
+        raise ValueError(f"state key {key!r} is not canonical: node ids must be strictly ascending")
+    return sum(1 << v for v in ids)
 
 
 def parse_edge_key(key: str) -> EdgeKey:
     """Inverse of `edge_key`; only the canonical spelling is accepted, so one edge has one key."""
     state, sep, node = key.partition("|")
-    if not sep or not (node == "end" or (node.isdigit() and node.isascii() and str(int(node)) == node)):
+    if not sep or not (node == "end" or _NODE_ID.fullmatch(node)):
         raise ValueError(f"invalid edge key {key!r}")
     return parse_state_key(state), (END if node == "end" else int(node))

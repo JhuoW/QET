@@ -1,7 +1,8 @@
 PYTHON ?= python3
 
 # GPU tests run only where a GPU is visible ("everything that runs on this machine").
-HAVE_GPU := $(shell nvidia-smi -L >/dev/null 2>&1 && echo 1)
+# (nvidia-smi -L exits 0 and prints "No devices found." on GPU-less nodes, so look for a "GPU <i>:" line.)
+HAVE_GPU := $(shell nvidia-smi -L 2>/dev/null | grep -q '^GPU [0-9]' && echo 1)
 
 .PHONY: setup lint test-fast test smoke
 

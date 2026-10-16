@@ -271,6 +271,12 @@ class GraphRecord:
     final: dict[str, Any]  # {"tool": <finish tool>, "args": canonical args}
     compile: CompileInfo
 
+    def __post_init__(self) -> None:
+        if self.initial_observation is not None:
+            raise NotImplementedError(
+                "graph records with an initial_observation wait for docs/DECISIONS.md Q11 (no renderer shows it)"
+            )
+
     @property
     def n(self) -> int:
         return len(self.nodes)
@@ -345,8 +351,8 @@ def compile_demo(
 ) -> GraphRecord:
     """Compile a successful demonstration (steps {tool, args, obs} in time order, then the finish call).
 
-    `task` holds the public task x: request, tools, optional initial_observation and finish tool name (default
-    "finish").
+    `task` holds the public task x: request, tools and the finish tool name (default "finish"). Its
+    initial_observation must be null until docs/DECISIONS.md Q11 is decided (D-016f).
     """
     c = as_contracts(contracts)
     task_order, start_values = tuple(task_order), tuple(start_values)  # each is read twice below

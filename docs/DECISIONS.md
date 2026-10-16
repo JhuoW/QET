@@ -56,6 +56,9 @@ adapter-declared start values (for example enum constants from tool schemas, wit
 compile report). Booleans and null are not automatically available, so a boolean argument equal to an earlier
 output gets a data edge (conservative). Adapters may raise the minimum string length for request matching if
 audits show spurious matches.
+Note added after the E0.7 review: by SPEC §4 rule 1, any argument value that is neither available from the start
+nor found in an earlier observation (a flag, null, a default, a code) depends on every earlier call; see Q13 and
+the compile report's underived values (D-016e).
 
 ### D-006 Invalid actions end the episode
 An output that is not a JSON object with exactly `tool` and `args`, names an unknown tool, or has non-object
@@ -132,8 +135,8 @@ also carries `underived`: `[v, canon_json(value)]` for every argument value of a
 neither from the start nor from an earlier observation, i.e. that made rule 1 add an edge from every earlier call;
 the compile report counts them and lists the most common values, so Gate A can see which constants turn graphs into
 chains (Q13). Edges are unchanged. (f) Until Q11 is decided, `compile_demo` refuses a task whose
-`initial_observation` is not null (the fixture facade `compile_edges` still accepts it), so no graph record trains
-on values that its prompts never show. Default: as described; cheap to reverse.
+`initial_observation` is not null, and so does every `GraphRecord` (records read from disk included); the fixture
+facade `compile_edges` still accepts it. So no graph record trains on values that its prompts never show. Default: as described; cheap to reverse.
 
 ### D-017 Renderer details left open by SPEC §5
 (a) An empty `[Tools]` list renders as the single line `  (none)`, as SPEC §5.2 says of every empty section; the
@@ -162,7 +165,9 @@ renormalizes over the ready actions whose successor lies inside S (SPEC §8 writ
 the exact lattice, and this is what the oracle and the sub-lattice fixtures do. (h) A log pi must be a number
 <= 0 (a sum of token log-probabilities, each <= 0): NaN, positive values and +inf raise, which catches a sign slip in
 the scorer; -inf (probability 0) is allowed. The facade accepts only canonical state and edge keys, so one edge has
-one key. Default: as described; cheap to reverse.
+one key. (i) Edge weights of the flow-based methods record the lambda of their start distribution, and the logged
+qet objective uses it unless mu is given, so configuration 5 (lambda = 0) logs -log B(empty) (SPEC §8).
+Default: as described; cheap to reverse.
 
 ### D-019 Repeat numbering per identical call; steps carry an observation
 (a) `#k` numbers repeats of the same tool with the same canonical args, as SPEC §2 and §5.1 define identical

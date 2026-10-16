@@ -3,6 +3,7 @@ method page's numbers and, on random DAGs, against the oracle."""
 
 import math
 import random
+import time
 
 import pytest
 import qet_ref as R
@@ -27,7 +28,7 @@ from qet.core.lattice import (
     sublattice,
     sublattice_seed,
 )
-from qet.core.weights import completion_counts, edge_weights, logged_objective, summarize
+from qet.core.weights import EdgeWeights, completion_counts, edge_weights, logged_objective, summarize
 
 S = frozenset
 RUN_PREDS = [[], [], [0, 1]]
@@ -236,19 +237,39 @@ def test_facade_keys_must_be_canonical():
     for bad in ("1,0", " 1", "1_0", "01", "0,,1", "-1", "0,0"):
         with pytest.raises(ValueError):
             parse_state_key(bad)
-    for bad in ("0,1|02", "0,1", "0|", "0|End", "0|+1", "1,0|2"):
+    for bad in ("0,1|02", "0,1", "0|", "0|End", "0|+1", "1,0|2", "0|\u0661", "\u0661|0"):
         with pytest.raises(ValueError):
             parse_edge_key(bad)
+    start = time.perf_counter()
+    assert parse_edge_key("1000000|end") == (1 << 1000000, END)
+    assert time.perf_counter() - start < 0.5
 
 
 def test_logged_objective_needs_log_b_and_mu_only_for_qet():
     lat, lp = doc_lattice()
     for method, kw in (("qet", {}), ("path_sft", {"order": [0, 1, 2]}), ("frontier", {}), ("uniform_aug", {})):
         ew = edge_weights(method, lat, lp, lam=0.5, **kw)
-        assert logged_objective(ew, lat, lp, lam=0.5) == summarize(method, lat, lp, lam=0.5, **kw).objective
+        assert logged_objective(ew, lat, lp) == summarize(method, lat, lp, lam=0.5, **kw).objective
     path = edge_weights("path_sft", lat, order=[0, 1, 2])  # no pass 1: only the demo-path log-probs are needed
     on_path = {e: lp[e] for e, w in path.weights.items() if w}
     assert logged_objective(path, lat, on_path) == pytest.approx(-sum(on_path.values()))
+
+
+def test_logged_qet_objective_uses_the_lambda_of_its_weights():
+    # follow-up review N1: configuration 5 (lambda = 0) logs -log B(empty), not the lambda = 0.5 objective
+    lat, lp = doc_lattice()
+    ew = edge_weights("qet", lat, lp, lam=0.0)
+    assert ew.lam == 0.0
+    assert logged_objective(ew, lat, lp) == pytest.approx(-log_completion(lat, lp)[0], abs=1e-15)
+    assert logged_objective(ew, lat, lp) == pytest.approx(0.836556, abs=1e-6)
+    for seed in range(100):
+        _, n, preds, olp = random_instance(seed)
+        lat, lp = full_lattice(n, [sorted(p) for p in preds]), convert(olp)
+        for lam in (0.0, 0.5, 0.9):
+            ew = edge_weights("qet", lat, lp, lam=lam)
+            assert logged_objective(ew, lat, lp) == summarize("qet", lat, lp, lam=lam).objective
+    with pytest.raises(ValueError):
+        logged_objective(EdgeWeights("qet", ew.weights), lat, lp)  # weights that do not say their lambda
 
 
 def test_zero_probability_edges():

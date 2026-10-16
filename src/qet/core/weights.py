@@ -35,6 +35,7 @@ class EdgeWeights:
     method: str
     weights: dict[EdgeKey, float]  # every edge of the lattice, finish edge (V, END) included; 0 = not trained
     occupancy: dict[int, float] | None = None  # m(I), flow-based methods only
+    lam: float | None = None  # lambda of the start distribution mu the weights were computed with (flow-based)
 
 
 def flow(
@@ -158,7 +159,7 @@ def edge_weights(
             return math.exp(edge_logp(logp, (s, v)) - z)
 
     w, m = flow(lat, mu, step)
-    return EdgeWeights(method, {**zeros, **w}, m)
+    return EdgeWeights(method, {**zeros, **w}, m, lam)
 
 
 # ----------------------------------------------------------------------------- objectives
@@ -177,19 +178,21 @@ def logged_objective(
     lat: Lattice,
     logp: LogP,
     *,
-    lam: float = 0.5,
     log_b: dict[int, float] | None = None,
     mu: dict[int, float] | None = None,
     paths: Sequence[Sequence[int]] | None = None,
 ) -> float:
     """The objective each configuration logs (SPEC §8): never the pass-2 loss of the flow-based methods.
 
-    Only qet needs log B and mu (computed here with `lam` unless given); path_sft and uniform_aug read log pi on
-    their weighted edges only, so configurations 1-3 can log from pass-2 log-probabilities alone.
+    Only qet needs log B and mu; mu defaults to the start distribution of the lambda the weights were computed with,
+    so configuration 5 (lambda = 0) logs -log B(empty). path_sft and uniform_aug read log pi on their weighted edges
+    only, so configurations 1-3 can log from pass-2 log-probabilities alone.
     """
     if ew.method == "qet":
+        if mu is None and ew.lam is None:
+            raise ValueError("qet weights must record their lambda (use edge_weights) or mu must be given")
         log_b = log_completion(lat, logp) if log_b is None else log_b
-        return qet_objective(lat, log_b, start_weights(lat, lam) if mu is None else mu)
+        return qet_objective(lat, log_b, start_weights(lat, ew.lam) if mu is None else mu)
     if ew.method == "frontier":
         m = ew.occupancy or {}
         local = [
@@ -235,6 +238,6 @@ def summarize(
         weights=ew.weights,
         qet_objective=qet_objective(lat, log_b, mu),
         surrogate=surrogate(ew.weights, logp),
-        objective=logged_objective(ew, lat, logp, lam=lam, log_b=log_b, mu=mu, paths=paths),
+        objective=logged_objective(ew, lat, logp, log_b=log_b, mu=mu, paths=paths),
         log_b_plus=log_completion(lat, logp, plus=True) if plus else None,
     )

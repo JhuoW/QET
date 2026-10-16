@@ -348,6 +348,9 @@ def test_underived_values_are_reported_without_changing_the_edges():
 def test_graph_records_refuse_an_initial_observation_until_q11_is_decided():
     with pytest.raises(NotImplementedError):
         compile_demo({**RUN_TASK, "initial_observation": {"inbox": []}}, RUN_DEMO, RUN_CONTRACTS, task_id="x")
+    data = compile_demo(RUN_TASK, RUN_DEMO, RUN_CONTRACTS, task_id="x").to_json()
+    with pytest.raises(NotImplementedError):  # records read from disk too
+        GraphRecord.from_json({**data, "initial_observation": {"inbox": [{"id": 42}]}})
 
 
 def recursive_width(n, preds):  # the textbook recursive matching, as an independent reference
