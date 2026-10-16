@@ -7,9 +7,11 @@ then stop. Scope changes are the human's; status updates are the agent's.
 ## E0 — Core library, CPU only (SPEC §2–§6, §8–§10)
 Goal: `src/qet/core` reproduces every fixture; property tests hold on random instances.
 
-- [ ] **E0.1 Scaffold.** `pyproject.toml` (src layout, package `qet`), Makefile targets of AGENTS.md, ruff and
+- [x] **E0.1 Scaffold.** `pyproject.toml` (src layout, package `qet`), Makefile targets of AGENTS.md, ruff and
   pytest config (`testpaths = ["tests", "reference"]`), `.gitignore` (results/raw, checkpoints, data, .env), empty
   modules of the layout. Accept: `make setup && make lint` pass; `make test-fast` runs (fixture tests may fail).
+  evidence: `make setup && make lint` → exit 0 (qet-0.1.0 installed editable; ruff: all checks passed);
+  `make test-fast` → runs: 44 passed, 120 failed (acceptance tests, facade not written yet); commit 7db3deb
 - [ ] **E0.2 Canonical form and contracts** (`canonical.py`, `contracts.py`; start `api.py` with the facade
   functions this task covers — each later task adds its own, E0.6 completes it). Accept:
   `pytest reference/acceptance -k "canonical_json or action_string"` passes; unit tests for glob resources, missing
