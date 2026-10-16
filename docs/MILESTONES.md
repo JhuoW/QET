@@ -12,10 +12,13 @@ Goal: `src/qet/core` reproduces every fixture; property tests hold on random ins
   modules of the layout. Accept: `make setup && make lint` pass; `make test-fast` runs (fixture tests may fail).
   evidence: `make setup && make lint` → exit 0 (qet-0.1.0 installed editable; ruff: all checks passed);
   `make test-fast` → runs: 44 passed, 120 failed (acceptance tests, facade not written yet); commit 7db3deb
-- [ ] **E0.2 Canonical form and contracts** (`canonical.py`, `contracts.py`; start `api.py` with the facade
+- [x] **E0.2 Canonical form and contracts** (`canonical.py`, `contracts.py`; start `api.py` with the facade
   functions this task covers — each later task adds its own, E0.6 completes it). Accept:
   `pytest reference/acceptance -k "canonical_json or action_string"` passes; unit tests for glob resources, missing
   template arguments, volatile paths.
+  evidence: `pytest reference/acceptance -q -k "canonical_json or action_string"` → 17 passed; `pytest
+  tests/core/test_canonical.py tests/core/test_contracts.py -q` → 36 passed; `make lint` → exit 0; spec-reviewer:
+  no blocking findings, its 3 should-fix items fixed in 983ab5e (D-015, Q7-Q10); commit 983ab5e (work: a74f5c4)
 - [ ] **E0.3 Compile** (`compile.py`, graph record I/O, compile report). Accept: `-k "compile or canonical_order"`
   passes; property and differential tests on ≥ 500 random demos (tests may import `reference/qet_ref.py`, for
   example its `random_demo` and `compile_edges`): identical edges to the oracle, edges point forward, labels
