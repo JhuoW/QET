@@ -1,0 +1,15 @@
+# Written by code, never committed (AGENTS.md)
+/results/raw/
+/checkpoints/
+/data/
+.env
+
+# Python and tooling
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/

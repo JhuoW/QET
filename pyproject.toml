@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qet"
+version = "0.1.0"
+description = "Quotient Execution Training (QET) for tool-using LLM agents"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+# Read-only trees (AGENTS.md "Sources of truth") are not ours to reformat.
+extend-exclude = ["reference", "third_party", ".claude", "results"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["qet"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "reference"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers"
+markers = [
+    "gpu: needs a CUDA GPU",
+    "slow: takes more than a few seconds; excluded from make test-fast",
+]
