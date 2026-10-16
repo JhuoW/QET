@@ -255,8 +255,8 @@ def edge_logp(logp: LogP, edge: EdgeKey) -> float:
     except KeyError:
         state, v = edge
         raise KeyError(f"no log-probability for edge {edge_key(state, v)!r}") from None
-    if math.isnan(x):
-        raise ValueError(f"log-probability of edge {edge_key(*edge)!r} is NaN")
+    if math.isnan(x) or x > 0.0:
+        raise ValueError(f"log-probability of edge {edge_key(*edge)!r} is {x!r}; it must be a number <= 0")
     return x
 
 
@@ -301,17 +301,19 @@ def state_of(nodes: Iterable[int], n: int) -> int:
 
 
 def parse_state_key(key: str) -> int:
-    state = 0
-    for part in key.split(",") if key else ():
-        v = int(part)
-        if v < 0 or state >> v & 1:
-            raise ValueError(f"invalid state key {key!r}")
-        state |= 1 << v
+    """Inverse of `state_key`; only the canonical spelling (ascending ids, no spaces) is accepted."""
+    try:
+        state = sum(1 << int(part) for part in key.split(",")) if key else 0
+    except ValueError:
+        raise ValueError(f"invalid state key {key!r}") from None
+    if state_key(state) != key:
+        raise ValueError(f"state key {key!r} is not canonical (expected {state_key(state)!r})")
     return state
 
 
 def parse_edge_key(key: str) -> EdgeKey:
+    """Inverse of `edge_key`; only the canonical spelling is accepted, so one edge has one key."""
     state, sep, node = key.partition("|")
-    if not sep:
+    if not sep or not (node == "end" or (node.isdigit() and node.isascii() and str(int(node)) == node)):
         raise ValueError(f"invalid edge key {key!r}")
     return parse_state_key(state), (END if node == "end" else int(node))

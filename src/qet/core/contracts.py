@@ -142,23 +142,22 @@ def _delete_path(obj: JSON, parts: list[str]) -> None:
 
 def glob_match(pattern: str, s: str) -> bool:
     """Whether `pattern` matches all of `s`, where `*` matches any string (empty and newlines included) and every
-    other character matches itself. Greedy with backtracking to the last `*`: O(len(pattern) * len(s)) at worst,
-    so model-generated arguments full of `*` cannot make it blow up."""
-    p = i = 0
-    star, mark = -1, 0
-    while i < len(s):
-        if p < len(pattern) and pattern[p] == WILDCARD:
-            star, mark = p, i
-            p += 1
-        elif p < len(pattern) and pattern[p] == s[i]:
-            p += 1
-            i += 1
-        elif star >= 0:
-            p, mark = star + 1, mark + 1
-            i = mark
-        else:
-            return False
-    return all(c == WILDCARD for c in pattern[p:])
+    other character matches itself. The text before the first `*` must be a prefix and the text after the last `*`
+    a suffix; the segments in between are found left to right with str.find (leftmost placement is optimal), so
+    nothing backtracks and model-generated arguments full of `*` cannot blow up."""
+    if WILDCARD not in pattern:
+        return pattern == s
+    first, *middle, last = pattern.split(WILDCARD)
+    if len(first) + len(last) > len(s) or not s.startswith(first) or not s.endswith(last):
+        return False
+    pos, end = len(first), len(s) - len(last)
+    for segment in middle:
+        if segment:
+            found = s.find(segment, pos, end)
+            if found < 0:
+                return False
+            pos = found + len(segment)
+    return True
 
 
 def patterns_meet(p: str, q: str) -> bool:

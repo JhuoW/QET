@@ -17,6 +17,8 @@ from qet.core.lattice import (
     lattice_from_states,
     log_completion,
     node_masks,
+    parse_edge_key,
+    parse_state_key,
     random_topological_order,
     sample_orders,
     start_weights,
@@ -25,7 +27,7 @@ from qet.core.lattice import (
     sublattice,
     sublattice_seed,
 )
-from qet.core.weights import completion_counts, edge_weights, summarize
+from qet.core.weights import completion_counts, edge_weights, logged_objective, summarize
 
 S = frozenset
 RUN_PREDS = [[], [], [0, 1]]
@@ -216,6 +218,37 @@ def test_method_argument_errors():
     sub = sublattice(3, RUN_PREDS, [[0, 1, 2]])
     with pytest.raises(ValueError):
         edge_weights("path_sft", sub, order=[1, 0, 2])  # leaves the states in use
+
+
+def test_log_probabilities_must_not_be_positive():
+    lat, lp = doc_lattice()
+    for bad in (0.1, math.inf, math.nan):
+        with pytest.raises(ValueError):
+            edge_weights("qet", lat, {**lp, (0, 0): bad})
+    assert edge_weights("qet", lat, {**lp, (0, 0): 0.0}).weights  # pi = 1 is fine
+
+
+def test_facade_keys_must_be_canonical():
+    assert parse_state_key("") == 0 and parse_state_key("0,2") == 5
+    assert (
+        parse_edge_key("0,1|2") == (3, 2) and parse_edge_key("0,1,2|end") == (7, END) and parse_edge_key("|0") == (0, 0)
+    )
+    for bad in ("1,0", " 1", "1_0", "01", "0,,1", "-1", "0,0"):
+        with pytest.raises(ValueError):
+            parse_state_key(bad)
+    for bad in ("0,1|02", "0,1", "0|", "0|End", "0|+1", "1,0|2"):
+        with pytest.raises(ValueError):
+            parse_edge_key(bad)
+
+
+def test_logged_objective_needs_log_b_and_mu_only_for_qet():
+    lat, lp = doc_lattice()
+    for method, kw in (("qet", {}), ("path_sft", {"order": [0, 1, 2]}), ("frontier", {}), ("uniform_aug", {})):
+        ew = edge_weights(method, lat, lp, lam=0.5, **kw)
+        assert logged_objective(ew, lat, lp, lam=0.5) == summarize(method, lat, lp, lam=0.5, **kw).objective
+    path = edge_weights("path_sft", lat, order=[0, 1, 2])  # no pass 1: only the demo-path log-probs are needed
+    on_path = {e: lp[e] for e, w in path.weights.items() if w}
+    assert logged_objective(path, lat, on_path) == pytest.approx(-sum(on_path.values()))
 
 
 def test_zero_probability_edges():

@@ -177,13 +177,19 @@ def logged_objective(
     lat: Lattice,
     logp: LogP,
     *,
-    log_b: dict[int, float],
-    mu: dict[int, float],
+    lam: float = 0.5,
+    log_b: dict[int, float] | None = None,
+    mu: dict[int, float] | None = None,
     paths: Sequence[Sequence[int]] | None = None,
 ) -> float:
-    """The objective each configuration logs (SPEC §8): never the pass-2 loss of the flow-based methods."""
+    """The objective each configuration logs (SPEC §8): never the pass-2 loss of the flow-based methods.
+
+    Only qet needs log B and mu (computed here with `lam` unless given); path_sft and uniform_aug read log pi on
+    their weighted edges only, so configurations 1-3 can log from pass-2 log-probabilities alone.
+    """
     if ew.method == "qet":
-        return qet_objective(lat, log_b, mu)
+        log_b = log_completion(lat, logp) if log_b is None else log_b
+        return qet_objective(lat, log_b, start_weights(lat, lam) if mu is None else mu)
     if ew.method == "frontier":
         m = ew.occupancy or {}
         local = [
@@ -229,6 +235,6 @@ def summarize(
         weights=ew.weights,
         qet_objective=qet_objective(lat, log_b, mu),
         surrogate=surrogate(ew.weights, logp),
-        objective=logged_objective(ew, lat, logp, log_b=log_b, mu=mu, paths=paths),
+        objective=logged_objective(ew, lat, logp, lam=lam, log_b=log_b, mu=mu, paths=paths),
         log_b_plus=log_completion(lat, logp, plus=True) if plus else None,
     )

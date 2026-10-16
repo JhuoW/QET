@@ -25,6 +25,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-017 | Proposed | Renderer details left open by SPEC §5 |
 | D-018 | Proposed | Lattice and weight details left open by SPEC §6, §8 |
 | D-019 | Proposed | Repeat numbering per identical call; steps carry an observation |
+| D-020 | Proposed | Guards for later milestones (task constraints, inference canonicalization) |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -102,8 +103,9 @@ expectation in eq. 2), for every configuration. Token-averaged losses would weig
 
 ### D-015 Resource glob semantics and contract validation
 `src/qet/core/contracts.py`. (a) `*` in a resource pattern matches any string, newlines included, and nothing
-else is special (a linear-time wildcard matcher, so model-generated arguments full of `*` cannot blow up; a run of
-`*` acts as one). The oracle's regex `.*` stops at a newline, so in the oracle even the universal `*` of a tool
+else is special. The matcher anchors the text before the first `*` and after the last one and finds the segments in
+between left to right with `str.find`, so nothing backtracks and model-generated arguments full of `*` cannot blow
+up (an earlier backtracking matcher was O(len(pattern)·len(s)) at worst, not linear as first written here). The oracle's regex `.*` stops at a newline, so in the oracle even the universal `*` of a tool
 without a contract (or of a template with a missing argument) fails to meet a resource that contains a newline,
 which contradicts SPEC §3. The two differ only for resources with a newline (from a template or an argument
 value), and there ours always reports the conflict (tested: we conflict whenever the oracle does). See Q7.
@@ -125,7 +127,13 @@ cases"); the compile report lists them. (b) The chain fallback after a failed re
 `i -> i+1` labelled `audit` only; the dropped analysis is what the audit refuted. (c) The compile report counts
 states exactly up to S_max and buckets larger graphs as `>S_max`; the incomparable-pair share is pooled over all
 node pairs of the dataset; width is the largest antichain (Dilworth). (d) A demonstration given to `compile_demo`
-ends with exactly one call of the task's finish tool (default `finish`). Default: as described; cheap to reverse.
+ends with exactly one call of the task's finish tool (default `finish`; see Q15). (e) The record's `compile` block
+also carries `underived`: `[v, canon_json(value)]` for every argument value of a later call that is available
+neither from the start nor from an earlier observation, i.e. that made rule 1 add an edge from every earlier call;
+the compile report counts them and lists the most common values, so Gate A can see which constants turn graphs into
+chains (Q13). Edges are unchanged. (f) Until Q11 is decided, `compile_demo` refuses a task whose
+`initial_observation` is not null (the fixture facade `compile_edges` still accepts it), so no graph record trains
+on values that its prompts never show. Default: as described; cheap to reverse.
 
 ### D-017 Renderer details left open by SPEC §5
 (a) An empty `[Tools]` list renders as the single line `  (none)`, as SPEC §5.2 says of every empty section; the
@@ -151,8 +159,10 @@ mass on every ready action) raises, because the objective is infinite there. (e)
 (f) The facade's `lattice_summary` enumerates the full lattice when no states are given, up to 2^16 states;
 `full_lattice` is capped at S_MAX unless a caller passes another cap. (g) In a sub-lattice, configuration 4's π̄
 renormalizes over the ready actions whose successor lies inside S (SPEC §8 writes ready(I)); the two coincide on
-the exact lattice, and this is what the oracle and the sub-lattice fixtures do. Default: as described; cheap to
-reverse.
+the exact lattice, and this is what the oracle and the sub-lattice fixtures do. (h) A log pi must be a number
+<= 0 (a sum of token log-probabilities, each <= 0): NaN, positive values and +inf raise, which catches a sign slip in
+the scorer; -inf (probability 0) is allowed. The facade accepts only canonical state and edge keys, so one edge has
+one key. Default: as described; cheap to reverse.
 
 ### D-019 Repeat numbering per identical call; steps carry an observation
 (a) `#k` numbers repeats of the same tool with the same canonical args, as SPEC §2 and §5.1 define identical
@@ -163,6 +173,15 @@ independent calls render different bytes; counterexample from the E0.3-E0.6 revi
 it at the price of two entries sharing a display name (Q10). (b) A step without an `obs` field is an error in
 Compile and Reduce (use null for "no observation"), as in the oracle (KeyError); it is never read as null.
 Default: as described; cheap to reverse (one function each).
+
+### D-020 Guards for later milestones (from the E0.7 review)
+(a) Rule 5 (`task_order`) takes only order constraints that are part of the public task, never edges of a
+benchmark's ground-truth DAG: it is the one channel through which an adapter could feed the true DAG into Compile,
+which SPEC §4 forbids, and core cannot detect it. Proposed for the M1.3 compile audit: check that adapters pass no
+ground-truth edges as task constraints. (b) At inference (E1.4), an action whose args cannot be canonicalized
+(NaN, infinities, keys that collide after NFC) ends the episode as `invalid_action` (D-006) instead of raising out
+of Reduce; adapters make observations canonicalizable before Reduce (for example NaN to null) and record that in
+their compile report. Default: as described; to be implemented and tested in E1.4 and M1.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
@@ -190,6 +209,19 @@ Default: as described; cheap to reverse (one function each).
   available from the start (D-005) and so drops their data edges, but the §5.2 template never renders the initial
   observation: at the empty state the model is trained to emit values that are not in its prompt. The oracle has
   the same gap. Render it (an `[Initial observation]` block, or `[Available values]` lines under a fixed name), or
-  have adapters fold it into the request and drop it from D-005? Decide before an adapter (E1.5, M1) uses it.
+  have adapters fold it into the request and drop it from D-005? Decide before an adapter (E1.5, M1) uses it;
+  until then `compile_demo` refuses a non-null initial observation (D-016f).
 - [ ] Q12 (D-005) The empty string always counts as available from the start (oracle and ours), so an argument
   `""` produced by an earlier observation (an empty cursor, say) gets no data edge. Keep?
+- [ ] Q13 (from the E0.7 review; D-005, SPEC §4 rule 1) D-005 says a boolean argument "equal to an earlier output
+  gets a data edge", but rule 1 does more: any argument value found neither in the request nor in an earlier
+  observation (`true`, `false`, `null`, a default such as `limit=10`, a code such as `lang="en"`) depends on every
+  earlier call, so calls that carry such constants compile to a chain (`get_weather(city=X, verbose=true)` three
+  times gives a chain of 4 states instead of 8). Should adapters declare `true`, `false`, `null` and schema defaults
+  and enums as start values by default? The compile report now lists these values (D-016e).
+- [ ] Q14 (from the E0.7 review) The request and tool descriptions are used as given (oracle and ours): an NFD
+  request misses whole-word start-value matches (spurious but conservative data edges) and is rendered in NFD
+  while targets are NFC. Normalize them to NFC in core, or require adapters to?
+- [ ] Q15 (from the E0.7 review; SPEC §1 vs §5.2) A task may name its finish tool (SPEC §1; `compile_demo` honours
+  `task["finish"]`), but the pinned system text says "Call finish when the task is complete." Require adapters to
+  name the finish tool `finish`, or make the system text use the task's finish name?

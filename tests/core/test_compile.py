@@ -326,6 +326,61 @@ def test_declared_start_values_may_be_any_iterable():
     assert from_generator == from_list and from_list.compile.volatile_consumed == () and from_list.edges == ()
 
 
+def test_underived_values_are_reported_without_changing_the_edges():
+    # E0.7 review: a constant flag nobody produced makes rule 1 depend on every earlier call
+    task = {"request": "Get the weather in NYC, SG and LON.", "tools": []}
+    c = {"get_weather": {"reads": ["weather:{city}"], "writes": []}}
+    demo = [
+        {"tool": "get_weather", "args": {"city": x, "verbose": True}, "obs": {"t": i}}
+        for i, x in enumerate(["NYC", "SG", "LON"])
+    ]
+    demo.append({"tool": "finish", "args": {"answer": 1}})
+    rec = compile_demo(task, demo, c, task_id="w")
+    assert edges_json(rec.edges) == [[0, 1, ["data"]], [0, 2, ["data"]], [1, 2, ["data"]]]
+    assert rec.compile.underived == ((1, "true"), (2, "true"))
+    assert GraphRecord.from_json(json.loads(json.dumps(rec.to_json()))) == rec
+    rep = compile_report([rec], contract_source="test")["underived_values"]
+    assert rep == {"count": 2, "graphs": 1, "most_common": [["true", 2]]}
+    declared = compile_demo(task, demo, c, task_id="w", start_values=[True])
+    assert declared.edges == () and declared.compile.underived == ()
+
+
+def test_graph_records_refuse_an_initial_observation_until_q11_is_decided():
+    with pytest.raises(NotImplementedError):
+        compile_demo({**RUN_TASK, "initial_observation": {"inbox": []}}, RUN_DEMO, RUN_CONTRACTS, task_id="x")
+
+
+def recursive_width(n, preds):  # the textbook recursive matching, as an independent reference
+    anc = [set() for _ in range(n)]
+    for v in range(n):
+        for u in preds[v]:
+            anc[v] |= {u} | anc[u]
+    match = [-1] * n
+
+    def augment(u, seen):
+        for v in range(n):
+            if u in anc[v] and not seen[v]:
+                seen[v] = True
+                if match[v] < 0 or augment(match[v], seen):
+                    match[v] = u
+                    return True
+        return False
+
+    return n - sum(augment(u, [False] * n) for u in range(n))
+
+
+def test_width_matches_a_recursive_matching_on_larger_dags_and_scales():
+    rng = random.Random(5)
+    for _ in range(100):
+        n = rng.randint(10, 60)
+        preds = R.random_dag(n, rng.choice([0.02, 0.05, 0.1, 0.3]), rng)
+        assert width(n, preds) == recursive_width(n, preds)
+    n = 1500
+    assert width(n, [[j - 1] if j else [] for j in range(n)]) == 1
+    assert width(n, [[j - 2] if j >= 2 else [] for j in range(n)]) == 2  # two interleaved chains
+    assert width(n, [[] for _ in range(n)]) == n
+
+
 def test_compile_report_counts():
     rec = compile_demo(RUN_TASK, RUN_DEMO, RUN_CONTRACTS, task_id="run-0")
     chain = fallback_to_chain(rec, orders_replayed=4, mismatches=1)

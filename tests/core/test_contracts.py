@@ -145,6 +145,15 @@ def test_runs_of_stars_in_argument_values_stay_fast():
     assert time.perf_counter() - start < 1.0
 
 
+def test_long_patterns_and_values_stay_fast():
+    start = time.perf_counter()
+    assert not glob_match("*" + "a" * 4000 + "b", "a" * 8000)
+    assert glob_match("x*" + "ab*" * 500 + "y", "x" + "ab" * 500 + "y")
+    c = Contracts.from_json({"note": {"reads": [], "writes": ["note:{title}"]}})
+    assert not conflict(c.effects("note", {"title": "*" + "a" * 3000 + "b"}), c.effects("note", {"title": "a" * 6000}))
+    assert time.perf_counter() - start < 1.0
+
+
 def test_glob_match_agrees_with_a_dotall_regex():
     rng = random.Random(0)
     for _ in range(20000):

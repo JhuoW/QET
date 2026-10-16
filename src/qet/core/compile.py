@@ -16,7 +16,16 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from qet.core.canonical import JSON, action_string, canon, canon_call, canon_step, scalar_leaves, value_key
+from qet.core.canonical import (
+    JSON,
+    action_string,
+    canon,
+    canon_call,
+    canon_json,
+    canon_step,
+    scalar_leaves,
+    value_key,
+)
 from qet.core.contracts import Contracts, as_contracts, conflict
 from qet.core.lattice import S_MAX, enumerate_states, node_masks
 from qet.core.reduce import EntryKey, smallest_key_order
@@ -84,6 +93,20 @@ def compile_edges(
     start_values: Iterable[JSON] = (),
 ) -> list[Edge]:
     """The five ordering rules of SPEC §4 over the demo steps ({tool, args, obs}, in time order), sorted by (u, v)."""
+    edges, _ = _analyze(request, steps, contracts, initial_observation, task_order, start_values)
+    return edges
+
+
+def _analyze(
+    request: str,
+    steps: Sequence[Mapping[str, Any]],
+    contracts: Contracts | Mapping[str, Any] | None,
+    initial_observation: JSON,
+    task_order: Iterable[Sequence[int]],
+    start_values: Iterable[JSON],
+) -> tuple[list[Edge], tuple[tuple[int, str], ...]]:
+    """The edges, and (v, canon_json(value)) for every argument value that made rule 1 fall back to "every earlier
+    call" (available neither from the start nor from an earlier observation; a diagnostic, D-016)."""
     c = as_contracts(contracts)
     parsed = [canon_step(s) for s in steps]
     calls = [(tool, args) for tool, args, _ in parsed]
@@ -94,12 +117,16 @@ def compile_edges(
     actions = [action_string(tool, args) for tool, args in calls]
     effects = [c.effects(tool, args) for tool, args in calls]
     labels: defaultdict[tuple[int, int], set[str]] = defaultdict(set)
+    underived: list[tuple[int, str]] = []
     for v, (_, args) in enumerate(calls):
         for value in scalar_leaves(args):  # rule 1, data: from every producer, or from every earlier call
             if value in available:
                 continue
             key = value_key(value)
-            for u in [u for u in range(v) if key in produced[u]] or range(v):
+            sources = [u for u in range(v) if key in produced[u]]
+            if not sources and v > 0:
+                underived.append((v, canon_json(value)))
+            for u in sources or range(v):
                 labels[(u, v)].add("data")
         writes = bool(effects[v].writes)
         for u in range(v):
@@ -111,7 +138,8 @@ def compile_edges(
                 labels[(u, v)].add("dup")
     for pair in task_order:  # rule 5, task
         labels[_pair(pair, n)].add("task")
-    return [Edge(u, v, tuple(sorted(ls))) for (u, v), ls in sorted(labels.items())]
+    edges = [Edge(u, v, tuple(sorted(ls))) for (u, v), ls in sorted(labels.items())]
+    return edges, tuple(sorted(set(underived)))
 
 
 def chain_edges(n: int) -> list[Edge]:
@@ -153,18 +181,31 @@ def width(n: int, preds: Sequence[Iterable[int]]) -> int:
     """Size of the largest antichain: n minus a maximum matching of the comparability graph (Dilworth)."""
     anc = ancestor_masks(n, preds)
     below = [[v for v in range(n) if anc[v] >> u & 1] for u in range(n)]
-    match = [-1] * n
-
-    def augment(u: int, seen: list[bool]) -> bool:
-        for v in below[u]:
-            if not seen[v]:
-                seen[v] = True
-                if match[v] < 0 or augment(match[v], seen):
-                    match[v] = u
-                    return True
-        return False
-
-    return n - sum(augment(u, [False] * n) for u in range(n))
+    right_of, left_of = [-1] * n, [-1] * n  # the matching, seen from each side
+    matched = 0
+    for root in range(n):  # Kuhn's augmenting paths, iterative (no recursion limit on large graphs)
+        seen, came_from = [False] * n, [-1] * n
+        stack, free = [(root, iter(below[root]))], -1
+        while stack and free < 0:
+            u, candidates = stack[-1]
+            for v in candidates:
+                if not seen[v]:
+                    seen[v], came_from[v] = True, u
+                    if left_of[v] < 0:
+                        free = v
+                    else:
+                        stack.append((left_of[v], iter(below[left_of[v]])))
+                    break
+            else:
+                stack.pop()
+        v = free
+        while v >= 0:  # flip the path: free right node back to the root
+            u = came_from[v]
+            v_next = right_of[u]
+            left_of[v], right_of[u] = u, v
+            v = v_next
+        matched += free >= 0
+    return n - matched
 
 
 def incomparable_pairs(n: int, preds: Sequence[Iterable[int]]) -> int:
@@ -192,6 +233,7 @@ class CompileInfo:
     orders_replayed: int = 0
     mismatches: int = 0
     volatile_consumed: tuple[tuple[int, int, str], ...] = ()  # (u, v, path): v consumed a volatile field of u
+    underived: tuple[tuple[int, str], ...] = ()  # (v, canon_json(value)): rule 1 fell back to every earlier call
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -199,6 +241,7 @@ class CompileInfo:
             "fallback_to_chain": self.fallback_to_chain,
             "audit": {"orders_replayed": self.orders_replayed, "mismatches": self.mismatches},
             "volatile_consumed": [list(x) for x in self.volatile_consumed],
+            "underived": [list(x) for x in self.underived],
         }
 
     @classmethod
@@ -210,6 +253,7 @@ class CompileInfo:
             orders_replayed=int(audit.get("orders_replayed", 0)),
             mismatches=int(audit.get("mismatches", 0)),
             volatile_consumed=tuple((int(u), int(v), str(p)) for u, v, p in data.get("volatile_consumed", [])),
+            underived=tuple((int(v), str(x)) for v, x in data.get("underived", [])),
         )
 
 
@@ -313,9 +357,12 @@ def compile_demo(
     if any(s.get("tool") == finish for s in steps):
         raise ValueError(f"a demonstration has exactly one {finish!r} call, at the end")
     request, initial = task["request"], task.get("initial_observation")
-    edges = compile_edges(
-        request, steps, c, initial_observation=initial, task_order=task_order, start_values=start_values
-    )
+    if initial is not None:
+        raise NotImplementedError(
+            "initial_observation is counted as available from the start but no renderer shows it; "
+            "docs/DECISIONS.md Q11 must be decided before graph records may use it"
+        )
+    edges, underived = _analyze(request, steps, c, initial, task_order, start_values)
     parsed = [canon_step(s) for s in steps]
     nodes = tuple(Node(i, tool, args, c.canon_obs(tool, obs)) for i, (tool, args, obs) in enumerate(parsed))
     final_tool, final_args = canon_call(demo[-1].get("tool"), demo[-1].get("args"))
@@ -329,7 +376,7 @@ def compile_demo(
         nodes=nodes,
         edges=tuple(edges),
         final={"tool": final_tool, "args": final_args},
-        compile=CompileInfo(volatile_consumed=consumed),
+        compile=CompileInfo(volatile_consumed=consumed, underived=underived),
     )
 
 
@@ -354,13 +401,16 @@ def read_records(path: str | Path) -> list[GraphRecord]:
 # ----------------------------------------------------------------------------- compile report (SPEC §4)
 def compile_report(records: Sequence[GraphRecord], *, contract_source: str, s_max: int = S_MAX) -> dict[str, Any]:
     """Per-dataset compile statistics: fallback share, width distribution (largest antichain), share of
-    incomparable pairs, states per graph (exact up to `s_max`), label counts, contract source, audit failures and
-    volatile fields that later calls consumed."""
+    incomparable pairs, states per graph (exact up to `s_max`), label counts, contract source, audit failures,
+    volatile fields that later calls consumed, and the underived argument values behind "every earlier call"
+    data edges (D-016)."""
     widths: Counter[int] = Counter()
     states: Counter[int | str] = Counter()
     labels = dict.fromkeys(sorted((*LABELS, AUDIT)), 0)
     pairs = incomparable = 0
     consumed = []
+    underived: Counter[str] = Counter()
+    with_underived = 0
     for rec in records:
         n, preds = rec.n, rec.preds()
         widths[width(n, preds)] += 1
@@ -374,6 +424,8 @@ def compile_report(records: Sequence[GraphRecord], *, contract_source: str, s_ma
         consumed += [
             {"task_id": rec.task_id, "from": u, "to": v, "path": p} for u, v, p in rec.compile.volatile_consumed
         ]
+        underived.update(x for _, x in rec.compile.underived)
+        with_underived += bool(rec.compile.underived)
     total = len(records)
     exact = sorted(k for k in states if isinstance(k, int))
     return {
@@ -389,4 +441,9 @@ def compile_report(records: Sequence[GraphRecord], *, contract_source: str, s_ma
             **{k: v for k, v in states.items() if isinstance(k, str)},
         },
         "volatile_consumed": consumed,
+        "underived_values": {
+            "count": sum(underived.values()),
+            "graphs": with_underived,
+            "most_common": [[x, k] for x, k in sorted(underived.items(), key=lambda kv: (-kv[1], kv[0]))[:20]],
+        },
     }
