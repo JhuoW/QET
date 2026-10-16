@@ -81,6 +81,15 @@ def show_call(tool: str, args: Mapping[str, JSON]) -> str:
     return f"{tool}(" + ", ".join(f"{k}={canon_json(a[k])}" for k in sorted(a)) + ")"
 
 
+def canon_call(tool: object, args: object) -> tuple[str, dict[str, JSON]]:
+    """A call {tool, args} as (tool, canonical args); the tool must be a string and the args an object."""
+    if not isinstance(tool, str):
+        raise TypeError(f"a call needs a string tool name, got {tool!r}")
+    if not isinstance(args, Mapping):
+        raise TypeError(f"the args of a {tool!r} call must be an object, got {type(args).__name__}")
+    return tool, canon(args)
+
+
 def scalar_leaves(x: JSON) -> Iterator[JSON]:
     """The scalar leaves of a value: objects in key order, lists in order; empty containers yield nothing."""
     if isinstance(x, Mapping):

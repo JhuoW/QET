@@ -9,8 +9,10 @@ from collections.abc import Mapping
 from typing import Any
 
 from qet.core import canonical, compile
+from qet.core import render as rendering
 from qet.core.canonical import JSON
 from qet.core.reduce import name_calls
+from qet.core.reduce import reduce as reduce_history
 
 
 def canonical_json(value: JSON) -> str:
@@ -46,3 +48,24 @@ def canonical_order(case: Mapping[str, Any]) -> list[int]:
     steps = case["steps"]
     keys = [key for _, key in name_calls((s["tool"], s["args"]) for s in steps)]
     return compile.canonical_order(compile.predecessor_sets(len(steps), _compile(case)), keys)
+
+
+def reduce(history: list[dict], contracts: Mapping[str, Any]) -> list[dict]:
+    """Reduce (SPEC §5.1): [{"name": str, "obs": canonical obs}] in H order."""
+    return [{"name": e.name, "obs": e.obs} for e in reduce_history(history, contracts)]
+
+
+def render(
+    task: Mapping[str, Any],
+    history: list[dict],
+    contracts: Mapping[str, Any],
+    variant: str = "quotient",
+    truncation: Mapping[str, Any] | None = None,
+) -> dict:
+    """{"system", "user"} for the quotient and chronological renderers; {"system", "messages"} (the chat turns after
+    the system message) for native_multiturn."""
+    if variant == "native_multiturn":
+        msgs = rendering.render_messages(task, history, contracts, variant, truncation)
+        return {"system": msgs[0]["content"], "messages": msgs[1:]}
+    p = rendering.render(task, history, contracts, variant, truncation)
+    return {"system": p.system, "user": p.user}

@@ -8,7 +8,6 @@ benchmark's ground-truth DAG.
 
 from __future__ import annotations
 
-import heapq
 import json
 import re
 from collections import Counter, defaultdict
@@ -17,10 +16,10 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from qet.core.canonical import JSON, action_string, canon, scalar_leaves, value_key
+from qet.core.canonical import JSON, action_string, canon, canon_call, scalar_leaves, value_key
 from qet.core.contracts import Contracts, as_contracts, conflict
 from qet.core.lattice import S_MAX, enumerate_states, node_masks
-from qet.core.reduce import EntryKey
+from qet.core.reduce import EntryKey, smallest_key_order
 
 LABELS = ("data", "effect", "decision", "dup", "task")
 AUDIT = "audit"  # label of the chain fallback after a failed replay audit
@@ -66,15 +65,6 @@ class Edge:
     labels: tuple[str, ...]
 
 
-def _call(step: Mapping[str, Any]) -> tuple[str, dict[str, JSON]]:
-    tool, args = step.get("tool"), step.get("args")
-    if not isinstance(tool, str):
-        raise TypeError(f"a step needs a string 'tool', got {tool!r}")
-    if not isinstance(args, Mapping):
-        raise TypeError(f"the args of a {tool!r} step must be an object, got {type(args).__name__}")
-    return tool, canon(args)
-
-
 def _pair(pair: Sequence[int], n: int) -> tuple[int, int]:
     u, v = pair
     if isinstance(u, bool) or isinstance(v, bool) or not isinstance(u, int) or not isinstance(v, int):
@@ -95,7 +85,7 @@ def compile_edges(
 ) -> list[Edge]:
     """The five ordering rules of SPEC §4 over the demo steps ({tool, args, obs}, in time order), sorted by (u, v)."""
     c = as_contracts(contracts)
-    calls = [_call(s) for s in steps]
+    calls = [canon_call(s.get("tool"), s.get("args")) for s in steps]
     n = len(calls)
     obs = [c.canon_obs(tool, s.get("obs")) for (tool, _), s in zip(calls, steps, strict=True)]
     available = StartValues(request, initial_observation, start_values)
@@ -137,27 +127,7 @@ def predecessor_sets(n: int, edges: Iterable[Edge]) -> list[frozenset[int]]:
 
 def canonical_order(preds: Sequence[Iterable[int]], keys: Sequence[EntryKey]) -> list[int]:
     """Topological order that always takes the ready node with the smallest Reduce key (SPEC §8, ablation a2)."""
-    n = len(keys)
-    if len(preds) != n:
-        raise ValueError(f"expected predecessor lists for {n} nodes, got {len(preds)}")
-    pending = [set(p) for p in preds]
-    succ: list[list[int]] = [[] for _ in range(n)]
-    for v, p in enumerate(pending):
-        for u in p:
-            succ[u].append(v)
-    heap = [(keys[v], v) for v in range(n) if not pending[v]]
-    heapq.heapify(heap)
-    order = []
-    while heap:
-        _, u = heapq.heappop(heap)
-        order.append(u)
-        for v in succ[u]:
-            pending[v].discard(u)
-            if not pending[v]:
-                heapq.heappush(heap, (keys[v], v))
-    if len(order) != n:
-        raise ValueError("the graph has a cycle")
-    return order
+    return smallest_key_order(preds, keys)
 
 
 # ----------------------------------------------------------------------------- graph shape
@@ -346,12 +316,12 @@ def compile_demo(
     edges = compile_edges(
         request, steps, c, initial_observation=initial, task_order=task_order, start_values=start_values
     )
-    calls = [_call(s) for s in steps]
+    calls = [canon_call(s.get("tool"), s.get("args")) for s in steps]
     nodes = tuple(
         Node(i, tool, args, c.canon_obs(tool, s.get("obs")))
         for i, ((tool, args), s) in enumerate(zip(calls, steps, strict=True))
     )
-    final_tool, final_args = _call(demo[-1])
+    final_tool, final_args = canon_call(demo[-1].get("tool"), demo[-1].get("args"))
     consumed = _volatile_consumed(steps, calls, c, StartValues(request, initial, start_values))
     return GraphRecord(
         task_id=task_id,

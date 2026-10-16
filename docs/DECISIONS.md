@@ -22,6 +22,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-014 | Proposed | Loss normalization per graph |
 | D-015 | Proposed | Resource glob semantics and contract validation |
 | D-016 | Proposed | Graph record and compile report details |
+| D-017 | Proposed | Renderer details left open by SPEC §5 |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -117,6 +118,16 @@ cases"); the compile report lists them. (b) The chain fallback after a failed re
 states exactly up to S_max and buckets larger graphs as `>S_max`; the incomparable-pair share is pooled over all
 node pairs of the dataset; width is the largest antichain (Dilworth). (d) A demonstration given to `compile_demo`
 ends with exactly one call of the task's finish tool (default `finish`). Default: as described; cheap to reverse.
+
+### D-017 Renderer details left open by SPEC §5
+(a) An empty `[Tools]` list renders as the single line `  (none)`, as SPEC §5.2 says of every empty section; the
+oracle prints no line there. No fixture or benchmark task has an empty tool list, so the difference is moot in
+practice, but it is recorded. (b) `native_multiturn` (D-004) uses the same canonical observations as the other
+renderers: volatile fields deleted and truncation applied before `[Observation] <canon_json(obs)>`; its first user
+message is exactly the `[Task]` and `[Tools]` lines. The facade returns `{"system", "messages"}` for it (the chat
+turns after the system message); training and inference use `render_messages`. (c) Truncation settings are
+validated: only `max_list_items` and `max_str_chars`, each a non-negative int or null. (d) Tools need `name`,
+`params` (a list of names) and `description`. Default: as described; cheap to reverse (one module).
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
