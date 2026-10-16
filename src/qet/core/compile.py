@@ -16,7 +16,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from qet.core.canonical import JSON, action_string, canon, canon_call, scalar_leaves, value_key
+from qet.core.canonical import JSON, action_string, canon, canon_call, canon_step, scalar_leaves, value_key
 from qet.core.contracts import Contracts, as_contracts, conflict
 from qet.core.lattice import S_MAX, enumerate_states, node_masks
 from qet.core.reduce import EntryKey, smallest_key_order
@@ -85,9 +85,10 @@ def compile_edges(
 ) -> list[Edge]:
     """The five ordering rules of SPEC §4 over the demo steps ({tool, args, obs}, in time order), sorted by (u, v)."""
     c = as_contracts(contracts)
-    calls = [canon_call(s.get("tool"), s.get("args")) for s in steps]
+    parsed = [canon_step(s) for s in steps]
+    calls = [(tool, args) for tool, args, _ in parsed]
     n = len(calls)
-    obs = [c.canon_obs(tool, s.get("obs")) for (tool, _), s in zip(calls, steps, strict=True)]
+    obs = [c.canon_obs(tool, o) for tool, _, o in parsed]
     available = StartValues(request, initial_observation, start_values)
     produced = [frozenset(value_key(x) for x in scalar_leaves(o)) for o in obs]
     actions = [action_string(tool, args) for tool, args in calls]
@@ -272,19 +273,18 @@ class GraphRecord:
 
 
 def _volatile_consumed(
-    steps: Sequence[Mapping[str, Any]], calls: Sequence[tuple[str, dict]], c: Contracts, available: StartValues
+    steps: Sequence[tuple[str, dict[str, JSON], JSON]], c: Contracts, available: StartValues
 ) -> tuple[tuple[int, int, str], ...]:
     """(u, v, path) where a later call v uses, as an argument, a value found only in a volatile field of u."""
     found = []
-    raw = [canon(s.get("obs")) for s in steps]
-    for u, (tool, _) in enumerate(calls):
+    for u, (tool, _, obs) in enumerate(steps):
         for path in c.volatile(tool):
-            field: JSON = raw[u]
+            field: JSON = canon(obs)
             for part in path.split("."):
                 field = field.get(part) if isinstance(field, dict) else None
             keys = {value_key(x) for x in scalar_leaves(field)} if field is not None else set()
-            for v in range(u + 1, len(calls)):
-                if any(value_key(x) in keys and x not in available for x in scalar_leaves(calls[v][1])):
+            for v in range(u + 1, len(steps)):
+                if any(value_key(x) in keys and x not in available for x in scalar_leaves(steps[v][1])):
                     found.append((u, v, path))
     return tuple(found)
 
@@ -305,6 +305,7 @@ def compile_demo(
     "finish").
     """
     c = as_contracts(contracts)
+    task_order, start_values = tuple(task_order), tuple(start_values)  # each is read twice below
     finish = task.get("finish", "finish")
     if not demo or demo[-1].get("tool") != finish:
         raise ValueError(f"a demonstration must end with a {finish!r} call")
@@ -315,13 +316,10 @@ def compile_demo(
     edges = compile_edges(
         request, steps, c, initial_observation=initial, task_order=task_order, start_values=start_values
     )
-    calls = [canon_call(s.get("tool"), s.get("args")) for s in steps]
-    nodes = tuple(
-        Node(i, tool, args, c.canon_obs(tool, s.get("obs")))
-        for i, ((tool, args), s) in enumerate(zip(calls, steps, strict=True))
-    )
+    parsed = [canon_step(s) for s in steps]
+    nodes = tuple(Node(i, tool, args, c.canon_obs(tool, obs)) for i, (tool, args, obs) in enumerate(parsed))
     final_tool, final_args = canon_call(demo[-1].get("tool"), demo[-1].get("args"))
-    consumed = _volatile_consumed(steps, calls, c, StartValues(request, initial, start_values))
+    consumed = _volatile_consumed(parsed, c, StartValues(request, initial, start_values))
     return GraphRecord(
         task_id=task_id,
         request=request,

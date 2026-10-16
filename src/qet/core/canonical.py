@@ -90,6 +90,16 @@ def canon_call(tool: object, args: object) -> tuple[str, dict[str, JSON]]:
     return tool, canon(args)
 
 
+def canon_step(step: Mapping[str, Any]) -> tuple[str, dict[str, JSON], JSON]:
+    """A step {tool, args, obs} as (tool, canonical args, raw obs). Every field is required; obs may be null."""
+    if not isinstance(step, Mapping):
+        raise TypeError(f"a step must be an object, got {type(step).__name__}")
+    if "obs" not in step:
+        raise ValueError(f"the {step.get('tool')!r} step has no 'obs' (use null for no observation)")
+    tool, args = canon_call(step.get("tool"), step.get("args"))
+    return tool, args, step["obs"]
+
+
 def scalar_leaves(x: JSON) -> Iterator[JSON]:
     """The scalar leaves of a value: objects in key order, lists in order; empty containers yield nothing."""
     if isinstance(x, Mapping):

@@ -24,6 +24,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-016 | Proposed | Graph record and compile report details |
 | D-017 | Proposed | Renderer details left open by SPEC §5 |
 | D-018 | Proposed | Lattice and weight details left open by SPEC §6, §8 |
+| D-019 | Proposed | Repeat numbering per identical call; steps carry an observation |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -147,8 +148,21 @@ finish weight of the flow-based methods is 1. (c) The orders given to `path_sft`
 topological orders that stay inside S. (d) A state with occupancy 0 sends no flow and is skipped in the frontier
 objective, so unreachable states never produce NaN; a reached state with B(I) = 0 (or, for frontier, with zero
 mass on every ready action) raises, because the objective is infinite there. (e) logsumexp sums with `math.fsum`.
-(f) The facade's `lattice_summary` enumerates the full lattice when no states are given, up to 2^16 states.
-Default: as described; cheap to reverse.
+(f) The facade's `lattice_summary` enumerates the full lattice when no states are given, up to 2^16 states;
+`full_lattice` is capped at S_MAX unless a caller passes another cap. (g) In a sub-lattice, configuration 4's π̄
+renormalizes over the ready actions whose successor lies inside S (SPEC §8 writes ready(I)); the two coincide on
+the exact lattice, and this is what the oracle and the sub-lattice fixtures do. Default: as described; cheap to
+reverse.
+
+### D-019 Repeat numbering per identical call; steps carry an observation
+(a) `#k` numbers repeats of the same tool with the same canonical args, as SPEC §2 and §5.1 define identical
+calls, and the Reduce key is (tool, canon_json(args), k). The oracle counts repeats of the display name instead.
+The two differ only when non-identifier keys make different calls print the same name (`f(a=1, b=2)` for
+`{"a": 1, "b": 2}` and `{"a=1, b": 2}`); there the oracle's rule breaks Proposition 1 (two legal orders of the two
+independent calls render different bytes; counterexample from the E0.3-E0.6 review, now a test), while ours keeps
+it at the price of two entries sharing a display name (Q10). (b) A step without an `obs` field is an error in
+Compile and Reduce (use null for "no observation"), as in the oracle (KeyError); it is never read as null.
+Default: as described; cheap to reverse (one function each).
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
@@ -159,15 +173,23 @@ Default: as described; cheap to reverse.
 - [ ] Q5 Publication: is code, data or checkpoints going to be released (affects license checks and AppWorld
   rules)?
 - [ ] Q6 Anything in SPEC.md the human wants to change before E0 starts.
-- [ ] Q7 (from the E0.2 review) Make `reference/qet_ref.py`'s `_glob` match newlines (`re.DOTALL`) so the oracle
-  agrees with SPEC §3 and D-015(a); no fixture contains a newline resource. Also: should the oracle reject the
-  contracts D-015(b) rejects?
+- [ ] Q7 (from the E0 reviews) Align the oracle with the implementation where they knowingly differ; no fixture
+  is affected by any of these: `_glob` should match newlines (`re.DOTALL`, SPEC §3, D-015a); reject the contracts
+  D-015(b) rejects; print `  (none)` for an empty `[Tools]` list (SPEC §5.2, D-017a); number repeats per
+  identical call (SPEC §2, D-019a).
 - [ ] Q8 (SPEC §3) Two patterns meet only when one glob-matches the other, so partial globs on both sides never
   meet (`*:7` and `order:*` both cover `order:7`). Acceptable for the AppWorld-style resources of M2, or should
   meeting mean "some string matches both"?
 - [ ] Q9 (SPEC §3) Volatile paths cannot descend into lists or name a key that contains a dot, so lists of
   timestamped records will fail the replay audit and fall back to a chain. Extend the path syntax before AppWorld?
-- [ ] Q10 (SPEC §2) `show_call` prints keys raw: different calls can share a name when keys are not identifiers
-  (`f(a=1, b=2)` for `{"a": 1, "b": 2}` and `{"a=1, b": 2}`), and a key containing a newline adds a line to the
-  prompt. The oracle (and so ours) numbers repeats `#k` by that display name, while SPEC §2 says "same tool, same
-  canonical args"; the two agree except for such keys. Keep, or quote non-identifier keys?
+- [ ] Q10 (SPEC §2) `show_call` prints keys raw: different calls can share a display name when keys are not
+  identifiers (`f(a=1, b=2)` for `{"a": 1, "b": 2}` and `{"a=1, b": 2}`), and a key containing a newline adds a
+  line to the prompt. Since D-019 the prompt stays invariant in that case, but two entries can look alike to the
+  model. Keep SPEC §2 as written, or quote non-identifier keys as §5.3 does (`["key"]`)?
+- [ ] Q11 (from the E0.3-E0.6 review; SPEC §4 vs §5.2) Compile counts the leaves of `initial_observation` as
+  available from the start (D-005) and so drops their data edges, but the §5.2 template never renders the initial
+  observation: at the empty state the model is trained to emit values that are not in its prompt. The oracle has
+  the same gap. Render it (an `[Initial observation]` block, or `[Available values]` lines under a fixed name), or
+  have adapters fold it into the request and drop it from D-005? Decide before an adapter (E1.5, M1) uses it.
+- [ ] Q12 (D-005) The empty string always counts as available from the start (oracle and ours), so an argument
+  `""` produced by an earlier observation (an empty cursor, say) gets no data edge. Keep?

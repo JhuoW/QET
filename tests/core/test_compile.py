@@ -308,6 +308,24 @@ def test_volatile_values_consumed_later_are_reported():
     assert rec.compile.volatile_consumed == ((0, 1, "meta.ts"),)
 
 
+def test_a_step_without_an_observation_is_an_error():
+    with pytest.raises(ValueError):
+        compile_edges("Go.", [{"tool": "f", "args": {}}], PURE)
+
+
+def test_declared_start_values_may_be_any_iterable():
+    task = {"request": "Go.", "tools": []}
+    c = {"f": {"reads": [], "writes": [], "volatile": ["ts"]}, "h": {"reads": [], "writes": []}}
+    demo = [
+        {"tool": "f", "args": {}, "obs": {"ts": "T1"}},
+        {"tool": "h", "args": {"t": "T1"}, "obs": {}},
+        {"tool": "finish", "args": {"answer": 1}},
+    ]
+    from_list = compile_demo(task, demo, c, task_id="v", start_values=["T1"])
+    from_generator = compile_demo(task, demo, c, task_id="v", start_values=(v for v in ["T1"]))
+    assert from_generator == from_list and from_list.compile.volatile_consumed == () and from_list.edges == ()
+
+
 def test_compile_report_counts():
     rec = compile_demo(RUN_TASK, RUN_DEMO, RUN_CONTRACTS, task_id="run-0")
     chain = fallback_to_chain(rec, orders_replayed=4, mismatches=1)

@@ -98,6 +98,24 @@ def test_canonical_entries_keep_execution_order():
     ]
 
 
+def test_repeats_are_numbered_per_identical_call_not_per_display_name():
+    # E0.3-E0.6 review counterexample: two different calls that print the same name (D-019)
+    c = {"f": {"reads": [], "writes": []}}
+    x = {"tool": "f", "args": {"a": 1, "b": 2}, "obs": {"r": 10}}
+    y = {"tool": "f", "args": {"a=1, b": 2}, "obs": {"r": 20}}
+    task = {"request": "Use 1 and 2.", "tools": [{"name": "f", "params": ["a", "b"], "description": "F"}]}
+    assert compile_edges("Use 1 and 2.", [x, y], c) == []  # independent, so both orders are legal
+    assert render(task, [x, y], c) == render(task, [y, x], c)
+    assert names(reduce([x, y], c)) == names(reduce([y, x], c)) == ["f(a=1, b=2)", "f(a=1, b=2)"]
+    assert names(reduce([x, y, x], c)) == ["f(a=1, b=2)", "f(a=1, b=2)#2", "f(a=1, b=2)"]
+
+
+def test_a_step_without_an_observation_is_an_error():
+    with pytest.raises(ValueError):
+        reduce([{"tool": "f", "args": {}}], {})
+    assert names(reduce([{"tool": "f", "args": {}, "obs": None}], {})) == ["f()"]
+
+
 def test_smallest_key_order():
     keys = [("b", "", 1), ("a", "", 1), ("c", "", 1)]
     assert smallest_key_order([[], [], []], keys) == [1, 0, 2]

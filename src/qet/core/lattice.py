@@ -129,8 +129,8 @@ def _lattice(n: int, masks: tuple[int, ...], states: Iterable[int]) -> Lattice:
     return Lattice(n, masks, tuple(sorted(set(states), key=state_sort_key)))
 
 
-def full_lattice(n: int, preds: Sequence[Iterable[int]], cap: int | None = None) -> Lattice | None:
-    """The full lattice, or None when it has more than `cap` states."""
+def full_lattice(n: int, preds: Sequence[Iterable[int]], cap: int | None = S_MAX) -> Lattice | None:
+    """The full lattice, or None when it has more than `cap` states (default S_MAX; None = no cap)."""
     masks = node_masks(n, preds)
     states = enumerate_states(masks, cap)
     return None if states is None else Lattice(n, masks, tuple(states))

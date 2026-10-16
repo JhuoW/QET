@@ -93,6 +93,12 @@ def test_enumeration_stops_above_the_cap_and_sorts_states():
     assert [state_key(s) for s in st] == ["", "0", "1", "0,1", "0,1,2"]
 
 
+def test_full_lattice_is_capped_at_s_max_by_default():
+    assert full_lattice(9, [[]] * 9) is None
+    assert len(full_lattice(9, [[]] * 9, cap=None).states) == 512
+    assert len(full_lattice(8, [[]] * 8).states) == S_MAX
+
+
 def test_node_masks_validation():
     for bad in ([[1], [0]], [[0]], [[3], []], [[True], []]):
         with pytest.raises(ValueError):

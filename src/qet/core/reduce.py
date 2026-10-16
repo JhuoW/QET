@@ -12,7 +12,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from qet.core.canonical import JSON, canon_call, canon_json, show_call
+from qet.core.canonical import JSON, canon_json, canon_step, show_call
 from qet.core.contracts import Contracts, as_contracts, conflict
 
 EntryKey = tuple[str, str, int]  # (tool, canon_json(args), k): the Reduce ordering key
@@ -32,16 +32,19 @@ class Entry:
 def name_calls(calls: Iterable[tuple[str, Mapping[str, JSON]]]) -> list[tuple[str, EntryKey]]:
     """Reduce step 2: each call's entry name and ordering key, in execution order.
 
-    The name is show_call(tool, args), with `#k` appended to the k-th call of the same name (k >= 2); the key is
-    (tool, canon_json(args), k). Names never mention step numbers.
+    The k-th identical call (same tool, same canonical args; SPEC §2) is named show_call(tool, args) + "#k" for
+    k >= 2; the key is (tool, canon_json(args), k). Names never mention step numbers. (The oracle counts repeats
+    of the display name instead; the two differ only when non-identifier keys make different calls print the same
+    name, where counting by display name would break Proposition 1. D-019.)
     """
-    seen: Counter[str] = Counter()
+    seen: Counter[tuple[str, str]] = Counter()
     out = []
     for tool, args in calls:
+        identity = (tool, canon_json(args))
+        seen[identity] += 1
+        k = seen[identity]
         base = show_call(tool, args)
-        seen[base] += 1
-        k = seen[base]
-        out.append((base if k == 1 else f"{base}#{k}", (tool, canon_json(args), k)))
+        out.append((base if k == 1 else f"{base}#{k}", (*identity, k)))
     return out
 
 
@@ -51,10 +54,11 @@ def canonical_entries(
     """Reduce steps 1-2: canonicalize every call and observation (volatile fields deleted) and name the entries.
     Execution order is kept (the chronological renderer uses this list as it is)."""
     c = as_contracts(contracts)
-    calls = [canon_call(h.get("tool"), h.get("args")) for h in history]
+    steps = [canon_step(h) for h in history]
+    names = name_calls((tool, args) for tool, args, _ in steps)
     return [
-        Entry(tool, args, c.canon_obs(tool, h.get("obs")), name, key)
-        for (tool, args), h, (name, key) in zip(calls, history, name_calls(calls), strict=True)
+        Entry(tool, args, c.canon_obs(tool, obs), name, key)
+        for (tool, args, obs), (name, key) in zip(steps, names, strict=True)
     ]
 
 
