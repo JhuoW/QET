@@ -20,6 +20,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-012 | Proposed | Uniform augmentation by exact completion counts |
 | D-013 | Proposed | Shared sub-lattice across configurations |
 | D-014 | Proposed | Loss normalization per graph |
+| D-015 | Proposed | Resource glob semantics and contract validation |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -94,6 +95,17 @@ epoch (seeded), so their states and edges stay identical.
 ### D-014 Loss normalization per graph
 Pass-2 losses are summed over target tokens and weighted edges, then averaged over the graphs in the batch (the
 expectation in eq. 2), for every configuration. Token-averaged losses would weight graphs by their size.
+
+### D-015 Resource glob semantics and contract validation
+SPEC §3 leaves two details open. (a) `*` in a resource pattern matches any string, newlines included
+(`src/qet/core/contracts.py` compiles globs with DOTALL). The oracle's regex `.` stops at a newline, so the two
+differ only for resources built from argument values that contain a newline; there ours reports a conflict and
+the oracle does not, which is the conservative side (SPEC §4: uncertainty adds edges). (b) Contract declarations
+are validated when parsed: only the fields `reads`, `writes`, `volatile` (each a list of strings; an omitted field
+is empty, as in the oracle), no `?`, `[` or `]` in a pattern outside `{arg}` placeholders (SPEC: "resources must
+not contain other glob characters"), no empty volatile path. Argument values are substituted unchanged, as in
+the oracle (a `*` inside a value then acts as a glob; every other character is literal). Default: as described;
+cheap to reverse (one module).
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
