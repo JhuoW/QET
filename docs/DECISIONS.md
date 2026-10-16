@@ -21,6 +21,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-013 | Proposed | Shared sub-lattice across configurations |
 | D-014 | Proposed | Loss normalization per graph |
 | D-015 | Proposed | Resource glob semantics and contract validation |
+| D-016 | Proposed | Graph record and compile report details |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -106,6 +107,16 @@ is empty, as in the oracle), no `?`, `[` or `]` in a pattern outside `{arg}` pla
 not contain other glob characters"), no empty volatile path. Argument values are substituted unchanged, as in
 the oracle (a `*` inside a value then acts as a glob; every other character is literal). Default: as described;
 cheap to reverse (one module).
+
+### D-016 Graph record and compile report details
+SPEC §1 and §4 leave these open; `src/qet/core/compile.py` does the following. (a) The record's `compile` block
+also carries `volatile_consumed`: `[u, v, path]` whenever call v takes as an argument a value that appears in
+volatile field `path` of u's raw observation and is not available from the start (SPEC §3: "Compile reports such
+cases"); the compile report lists them. (b) The chain fallback after a failed replay audit replaces all edges by
+`i -> i+1` labelled `audit` only; the dropped analysis is what the audit refuted. (c) The compile report counts
+states exactly up to S_max and buckets larger graphs as `>S_max`; the incomparable-pair share is pooled over all
+node pairs of the dataset; width is the largest antichain (Dilworth). (d) A demonstration given to `compile_demo`
+ends with exactly one call of the task's finish tool (default `finish`). Default: as described; cheap to reverse.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
