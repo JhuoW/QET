@@ -226,8 +226,9 @@ def gate_a(compile_run: Path, stats_run: Path, pilot_run: Path | None, src: Sour
                 "of 140.4 GiB (H200, 143,771 MiB) |",
                 f"| GPU-hours | load {num(hours['load'], 3)}, train {num(hours['train'], 3)}, eval "
                 f"{num(hours['eval'], 3)}; total {num(pm['gpu_hours'], 3)} (the other "
-                f"{num(pm['gpu_hours'] - sum(hours.values()), 3)} is the run's bookkeeping outside these phases, such "
-                "as writing its data folder) |", ""]  # fmt: skip
+                f"{num(pm['gpu_hours'] - sum(hours.values()), 3)} is data preparation before the phases: loading the "
+                "tokenizer, reading the compile records, rebuilding the dev tasks and writing the run's data folder) "
+                "|", ""]  # fmt: skip
 
         # seconds per budget token: pass-1 configurations spend a share of the budget on scoring (cheaper per token)
         per_graph = stats["tokens_per_graph"]
@@ -266,9 +267,12 @@ def gate_a(compile_run: Path, stats_run: Path, pilot_run: Path | None, src: Sour
                 "| B (tokens per run) | epochs, configuration 2 | epochs, configuration 6 | GPU-hours per run "
                 f"(configuration 2 / 6) | M1 matrix, {runs} runs |", "| --- | --- | --- | --- | --- |"]  # fmt: skip
         core = ["1", "2", "3", "4", "5", "6", "2", "3", "6"]  # the core configurations on Qwen, then on Llama
+        ablations = ["a1", "a2", "a3", "a4", "a4", "a4"]
+        grid_ablations: dict[float, float] = {}
         for b in (125e6, 250e6, 500e6, 1e9):
             projection[b] = {"epochs2": b / epoch["2"], "epochs6": b / epoch["6"], "matrix": b * matrix_spt / 3600}
             grid[b] = sum(2 * spt[c] * b / 3600 for c in core)  # two more learning rates per core configuration
+            grid_ablations[b] = sum(2 * spt[c] * b / 3600 for c in ablations)
             out.append(f"| {num(int(b))} | {num(b / epoch['2'], 2)} | {num(b / epoch['6'], 2)} | "
                        f"{num(b * spt['2'] / 3600, 1)} / {num(b * spt['6'] / 3600, 1)} | "
                        f"{num(b * matrix_spt / 3600, 0)} |")  # fmt: skip
@@ -280,10 +284,12 @@ def gate_a(compile_run: Path, stats_run: Path, pilot_run: Path | None, src: Sour
                 f"own warm-up steps 2-{len(warm)} (demo-order SFT, shaped like configuration 2) ran pass 2 at "
                 f"{num(tps2_warm, 0)} tokens/s; at that rate for the configurations without pass 1, the matrix "
                 f"takes {pct(alt / matrix_spt - 1)} longer.",
-                "- Not included: dev tuning trials (EVAL_PLAN §8; section 10 prices a learning-rate grid); the format "
-                "warm-up (D-010: its tokens count inside B, and configurations 2-6 share one warm-up per backbone "
-                "and seed); pack building on the CPU (in the pilot, part of the train-phase time outside the logged "
-                "steps above, for 500 graphs); evaluation (below).", ""]  # fmt: skip
+                "- The format warm-up (D-010) counts inside B, and configurations 2-6 share one per backbone and seed, "
+                "so a run trains B minus the warm-up itself: with the warm-ups included, the matrix totals are upper "
+                "bounds.",
+                "- Not included: dev tuning trials (EVAL_PLAN §8; section 10 prices a learning-rate grid); pack "
+                "building on the CPU (in the pilot, part of the train-phase time outside the logged steps above, for "
+                "500 graphs); evaluation (below).", ""]  # fmt: skip
 
         preds = src.lines(pilot_run / "predictions" / "greedy.jsonl")
         steps = [s for p in preds for s in p["steps"]]
@@ -355,7 +361,7 @@ def gate_a(compile_run: Path, stats_run: Path, pilot_run: Path | None, src: Sour
     test_widths = {r.task_id: width(r.n, r.preds()) for r in split_records["test"]}
     test_manifest = src.json(REPO / "configs" / "m1" / "manifests" / "test.json")["tasks"]
     by_cell: dict[tuple, list[str]] = {}
-    for t in test_manifest:  # manifest order: the first k of each cell are the first k trials
+    for t in test_manifest:  # graph seeds ascend within a cell, so the first k are its k lowest seeds
         by_cell.setdefault((t["core"], t["depth"], t["irrelevant"], t["form"]), []).append(t["task_id"])
     shares = {
         b: sum(lo <= w <= hi for w in test_widths.values()) / len(test_widths) for b, (lo, hi) in WIDTH_BINS.items()
@@ -363,11 +369,13 @@ def gate_a(compile_run: Path, stats_run: Path, pilot_run: Path | None, src: Sour
     narrow = min(shares, key=shares.get)
     out += ["", f"Criterion 1 pools test graphs of width ≥ 3 ({pct(shares['3-4'] + shares['5+'])} of the provisional "
             f"test graphs); the smallest width bin (EVAL_PLAN §3.1) is width {narrow} ({pct(shares[narrow])}). A "
-            "smaller test set takes the first k graphs of each cell of the provisional manifest; its pools are "
+            "smaller test set takes the first k graphs (lowest graph seeds) of each cell of the provisional manifest; "
+            "its pools are "
             "counted from the compiled test graphs. \"Smallest Δ\" is the least difference a pool detects with the "
             "power above, per comparison on one seed's greedy outcomes (three seeds per configuration add "
             "precision). Criterion 1 needs both (6 − 3) and (6 − 4) to be significant, so its joint power lies "
-            "between 0.64 (independent comparisons) and 0.8.", "",
+            "between 0.64 and 0.8; the lower bound assumes the two comparisons are not negatively dependent, which "
+            "their shared configuration 6 ensures.", "",
             "| graphs per cell | test tasks | width ≥ 3 pool | smallest Δ (ψ = 0.1 / 0.2 / 0.3) | smallest bin: "
             "tasks, Δ at ψ = 0.2 | evaluation GPU-hours per checkpoint, current decoding |",
             "| --- | --- | --- | --- | --- | --- |"]  # fmt: skip
@@ -390,7 +398,8 @@ def gate_a(compile_run: Path, stats_run: Path, pilot_run: Path | None, src: Sour
 
     out += ["## 9. Proposed wording for EVAL_PLAN §9 (for the human to accept, change or reject)", "",
             "Common terms (proposal): FuncBenchGen test graphs; every run evaluated at its checkpoint at 100% of B, so "
-            "the compared runs have spent the same compute and no checkpoint is selected; success averaged over the "
+            "the compared runs have spent the same compute (up to the last step's overshoot of B, D-023f) and no "
+            "checkpoint is selected; success averaged over the "
             "three seeds of each task; differences with paired-bootstrap 95% intervals (10,000 resamples, clustered "
             "by task); \"significant\" means the interval excludes 0. McNemar per seed is reported alongside. "
             "Choosing each run's checkpoint by dev success among its 25/50/75/100% checkpoints would compare runs at "
@@ -421,7 +430,8 @@ def gate_a(compile_run: Path, stats_run: Path, pilot_run: Path | None, src: Sour
                 "(AdamW, lr 1e-4, 3% warm-up, cosine decay) for every configuration, which is equal tuning with zero "
                 "trials each. A 3-value grid on one seed at full B for the 9 core configurations (two extra rates "
                 f"each; the default-rate run doubles as seed 0) would add about {num(grid[250e6], 0)} GPU-hours of "
-                "training at 250M, plus dev evaluations.",
+                f"training at 250M, plus dev evaluations; tuning the six ablation runs the same way, about "
+                f"{num(grid_ablations[250e6], 0)} more.",
                 f"3. **Evaluation.** The current decoder would need about {num(one_eval, 0)} GPU-hours per checkpoint "
                 "evaluation at 20 graphs per cell (likely more; section 6). Proposal: the agent builds batched "
                 "decoding (no GPU spending beyond short validation jobs within the per-job cap), measures it, and the "
@@ -443,6 +453,9 @@ def gate_a(compile_run: Path, stats_run: Path, pilot_run: Path | None, src: Sour
                 "- Open questions that touch M1: Q17 (a4 on every graph), D-028c (the stateful extension), Q16, Q18.",
                 ""]  # fmt: skip
     out += ["**STOP.** The agent does not start M1.5 or any further GPU run until the human decides.", ""]
+    audit = REPO / "docs" / "reports" / "gate-A-audit.md"
+    if audit.exists():  # the results-auditor's verdict and table, transcribed from its report
+        out += [audit.read_text(encoding="utf-8").rstrip(), ""]
     out += ["## Sources (sha256)", ""] + [f"- `{p}` {d}" for p, d in src.files]
     return "\n".join(out) + "\n"
 

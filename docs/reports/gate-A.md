@@ -80,7 +80,7 @@ Pilot `M1-pilot-qet-s0-20261017T175029Z`: configuration 6 on Qwen/Qwen2.5-7B-Ins
 | weights, optimizer update, diagnostic | 0.37 s (0.03% of step time) |
 | train phase outside the logged steps (model setup, pack building) | 79.8 s (5.8% of the phase) |
 | peak GPU memory allocated (`torch.cuda.max_memory_allocated`, max over steps) | 90.8 GiB of 140.4 GiB (H200, 143,771 MiB) |
-| GPU-hours | load 0.001, train 0.384, eval 0.006; total 0.394 (the other 0.002 is the run's bookkeeping outside these phases, such as writing its data folder) |
+| GPU-hours | load 0.001, train 0.384, eval 0.006; total 0.394 (the other 0.002 is data preparation before the phases: loading the tokenizer, reading the compile records, rebuilding the dev tasks and writing the run's data folder) |
 
 Training projection (a proposal: the token budget B per run is the human's decision). Matched compute gives every run the same B of scored + gradient tokens (EVAL_PLAN §8); a run's time follows its share of scoring tokens at the measured rate of each pass, plus the pilot's other step time per token. Epochs are over the 5,000 training graphs, from the pilot sample's mean tokens per graph in each of the 224 grid cells weighted by the full split's graphs per cell: about 129.5 million tokens per epoch for configuration 2 and 1,292 million for configuration 6.
 
@@ -94,7 +94,8 @@ Training projection (a proposal: the token budget B per run is the human's decis
 Assumptions and what is left out:
 - The matrix is EVAL_PLAN §4's: configurations 1-6 × 3 seeds on Qwen2.5-7B-Instruct; 2, 3 and 6 × 3 seeds on Llama-3.1-8B-Instruct, assumed to train at the measured Qwen throughput (not measured); a1, a2, a3 and a4 with K = 2, 4, 8 on one seed.
 - Every configuration is assumed to run each pass at configuration 6's measured rate. The pilot's own warm-up steps 2-5 (demo-order SFT, shaped like configuration 2) ran pass 2 at 7,286 tokens/s; at that rate for the configurations without pass 1, the matrix takes 3.8% longer.
-- Not included: dev tuning trials (EVAL_PLAN §8; section 10 prices a learning-rate grid); the format warm-up (D-010: its tokens count inside B, and configurations 2-6 share one warm-up per backbone and seed); pack building on the CPU (in the pilot, part of the train-phase time outside the logged steps above, for 500 graphs); evaluation (below).
+- The format warm-up (D-010) counts inside B, and configurations 2-6 share one per backbone and seed, so a run trains B minus the warm-up itself: with the warm-ups included, the matrix totals are upper bounds.
+- Not included: dev tuning trials (EVAL_PLAN §8; section 10 prices a learning-rate grid); pack building on the CPU (in the pilot, part of the train-phase time outside the logged steps above, for 500 graphs); evaluation (below).
 
 Evaluation with the current decoding path (Hugging Face, one sequence at a time, D-026b): the pilot ran 6 greedy dev episodes, 41 generation steps and 818 generated tokens in 23 s (0.57 s per step). Assuming an episode takes as many steps as its demonstration (calls plus finish; 16.3 on the provisional test set; the pilot's episodes took 41 steps where this gives 36), one evaluation of one checkpoint on the 4,480 test tasks with greedy plus 8 samples would take about 104 GPU-hours, so 33 runs need at least 3,440 before Resume@prefix, dev evaluations, the checkpoint curves, ToolHop and the held-out sets. This is likely an underestimate: the pilot's tasks have 5.0 calls on average, the test tasks 15.3, with longer prompts and actions. This path does not scale: batched decoding (vLLM, or a batched loop with the same stopping and sampling rules, D-026b) has to land and be measured before M1.7.
 
@@ -127,7 +128,7 @@ Paired tasks needed to detect a success-rate difference Δ between two configura
 | 0.10 | 77 | 155 | 234 |
 | 0.15 | – | 68 | 103 |
 
-Criterion 1 pools test graphs of width ≥ 3 (62.6% of the provisional test graphs); the smallest width bin (EVAL_PLAN §3.1) is width 2 (16.4%). A smaller test set takes the first k graphs of each cell of the provisional manifest; its pools are counted from the compiled test graphs. "Smallest Δ" is the least difference a pool detects with the power above, per comparison on one seed's greedy outcomes (three seeds per configuration add precision). Criterion 1 needs both (6 − 3) and (6 − 4) to be significant, so its joint power lies between 0.64 (independent comparisons) and 0.8.
+Criterion 1 pools test graphs of width ≥ 3 (62.6% of the provisional test graphs); the smallest width bin (EVAL_PLAN §3.1) is width 2 (16.4%). A smaller test set takes the first k graphs (lowest graph seeds) of each cell of the provisional manifest; its pools are counted from the compiled test graphs. "Smallest Δ" is the least difference a pool detects with the power above, per comparison on one seed's greedy outcomes (three seeds per configuration add precision). Criterion 1 needs both (6 − 3) and (6 − 4) to be significant, so its joint power lies between 0.64 and 0.8; the lower bound assumes the two comparisons are not negatively dependent, which their shared configuration 6 ensures.
 
 | graphs per cell | test tasks | width ≥ 3 pool | smallest Δ (ψ = 0.1 / 0.2 / 0.3) | smallest bin: tasks, Δ at ψ = 0.2 | evaluation GPU-hours per checkpoint, current decoding |
 | --- | --- | --- | --- | --- | --- |
@@ -139,7 +140,7 @@ Proposal: 10 graphs per cell (2,240 test tasks): at ψ = 0.2 its width ≥ 3 poo
 
 ## 9. Proposed wording for EVAL_PLAN §9 (for the human to accept, change or reject)
 
-Common terms (proposal): FuncBenchGen test graphs; every run evaluated at its checkpoint at 100% of B, so the compared runs have spent the same compute and no checkpoint is selected; success averaged over the three seeds of each task; differences with paired-bootstrap 95% intervals (10,000 resamples, clustered by task); "significant" means the interval excludes 0. McNemar per seed is reported alongside. Choosing each run's checkpoint by dev success among its 25/50/75/100% checkpoints would compare runs at different compute: a change to "at matched compute" that the human would have to adopt explicitly.
+Common terms (proposal): FuncBenchGen test graphs; every run evaluated at its checkpoint at 100% of B, so the compared runs have spent the same compute (up to the last step's overshoot of B, D-023f) and no checkpoint is selected; success averaged over the three seeds of each task; differences with paired-bootstrap 95% intervals (10,000 resamples, clustered by task); "significant" means the interval excludes 0. McNemar per seed is reported alongside. Choosing each run's checkpoint by dev success among its 25/50/75/100% checkpoints would compare runs at different compute: a change to "at matched compute" that the human would have to adopt explicitly.
 
 1. Greedy success on graphs of measured width ≥ 3: if the interval of (6 − 3) or of (6 − 4) contains 0 or lies below it, the objective claim fails.
 2. Greedy success on all test graphs: if (2 − 1) is significant and positive but the interval of (6 − 2) contains 0 or lies below it, the gain belongs to the interface, not the objective.
@@ -149,7 +150,7 @@ Common terms (proposal): FuncBenchGen test graphs; every run evaluated at its ch
 ## 10. Decisions for the human
 
 1. **Training budget.** Proposal: B = 250,000,000 tokens per run, about 254 GPU-hours of training for the 33-run matrix at the measured throughput (500,000,000: about 508). At 250M, configuration 2 gets 1.93 epochs of the 5,000 graphs and configuration 6 0.19: QET's lattice costs about 10.0 times the tokens per graph, so at matched compute it sees a fraction of the graphs. That is the comparison EVAL_PLAN §8 defines; the 25-100% curves show the trend within B, not what more compute would do. Each run is above the 1 GPU-hour per-job cap (D-021), so the budget is recorded as a batch approval in DECISIONS.md.
-2. **Tuning.** EVAL_PLAN §8 asks for the same number of dev trials per configuration; D-009 proposes a small learning-rate grid and defers it to Gate A. Proposal: no grid in M1, with D-009's defaults (AdamW, lr 1e-4, 3% warm-up, cosine decay) for every configuration, which is equal tuning with zero trials each. A 3-value grid on one seed at full B for the 9 core configurations (two extra rates each; the default-rate run doubles as seed 0) would add about 141 GPU-hours of training at 250M, plus dev evaluations.
+2. **Tuning.** EVAL_PLAN §8 asks for the same number of dev trials per configuration; D-009 proposes a small learning-rate grid and defers it to Gate A. Proposal: no grid in M1, with D-009's defaults (AdamW, lr 1e-4, 3% warm-up, cosine decay) for every configuration, which is equal tuning with zero trials each. A 3-value grid on one seed at full B for the 9 core configurations (two extra rates each; the default-rate run doubles as seed 0) would add about 141 GPU-hours of training at 250M, plus dev evaluations; tuning the six ablation runs the same way, about 87 more.
 3. **Evaluation.** The current decoder would need about 104 GPU-hours per checkpoint evaluation at 20 graphs per cell (likely more; section 6). Proposal: the agent builds batched decoding (no GPU spending beyond short validation jobs within the per-job cap), measures it, and the evaluation budget is set from that measurement.
 4. **Decoding limit** (section 7): max_new_tokens = 512 for every system.
 5. **Test size per cell** (section 8) and the held-out sets (D-028); then the test manifests are frozen.
@@ -157,6 +158,39 @@ Common terms (proposal): FuncBenchGen test graphs; every run evaluated at its ch
 7. **Open items that touch M1:** Q17 (a4 on every graph), D-028c (the stateful extension), Q16, Q18; the warm-up length (D-010 fixes it once, from the pilot, as the steps until format errors on dev fall below 1%; the pilot ran a fixed 5 steps without measuring format errors, so it is still open; proposal: measure it at the start of M1.5); whether to measure Llama-3.1-8B throughput with its own short pilot (assumed equal to Qwen's above).
 
 **STOP.** The agent does not start M1.5 or any further GPU run until the human decides.
+
+## Audit (results-auditor)
+
+Transcribed from the results-auditor's reports; the auditor recomputed every number from `results/raw/` and the
+committed manifests with its own code (in the session scratchpad) and edited nothing in the repository.
+
+- **First audit, report at 3d18db1: FAIL.** No numeric mismatch, but four blocking items: an impossible McNemar cell
+  (Δ > ψ), a precision footnote the data contradict, a cost list without dev tuning, and a §9 proposal that changed
+  "at matched compute" without saying so; plus 15 notes, among them the 64-token decoding limit that would leave
+  11.9% of test tasks unsolvable.
+- **Re-audit, report at 031fd79: PASS WITH NOTES.** All four blocking items fixed and checked against the data;
+  every new number recomputed and matching; nothing regressed; D-030 agrees with the report. Its eight non-blocking
+  notes (wording in D-030 and the report, the ablation runs' grid cost, the warm-up as an upper bound, the joint-power
+  assumption, the time outside the phases, the last step's overshoot, a RUNLOG row for the superseded statistics run)
+  are applied in the commit after 031fd79.
+
+Re-audit table (031fd79):
+
+| Report item | Source | Verdict |
+| --- | --- | --- |
+| 22 source sha256 values; working copy equals 031fd79 | files on disk | OK |
+| Statistics re-run M1-pilot-stats-20261017T190141Z | manifest, RUNLOG, `cmp` with the first run | OK: 195883c, clean, completed, byte-identical outputs |
+| §1-3 (21 rows, every cell) | report.json, per-task recomputation | OK, 0 mismatches |
+| §2 footnote | raw_records.jsonl, audits.jsonl | OK: every raw-precision < 1 graph has a value with several producers (train 402/402, dev 89/89, test 382/382, heldout 63/63, renamed 421/421) |
+| §3 bullet, §4, §5 | stats.json, graphs.jsonl | OK, 0 mismatches |
+| §6 steps, distinct graphs, pass rates, memory, time outside steps | train_log.jsonl, manifest | OK: 5 + 15 steps, 60 graphs, 18,509 and 7,745 tokens/s, 90.8 GiB, 79.8 s |
+| §6 tokens per epoch, projection table (24 cells), warm-up sensitivity | graphs.jsonl, train.json, train_log.jsonl | OK: 7,286 tokens/s, +3.8% |
+| §6 evaluation paragraph | greedy.jsonl, dev.json, test.json | OK: 36 vs 41 steps, 104 and 3,440 GPU-hours |
+| §7 decoding-limit table (40 cells) and proposal | own action strings and the pinned tokenizers | OK: longest 240, max_new_tokens 512 |
+| §8 McNemar table, counted pools, smallest Δ (21 cells) | Connor (1987), own widths | OK |
+| §9 wording vs EVAL_PLAN §6, §8, §9 | EVAL_PLAN.md | OK: labelled as a proposal, departure stated |
+| §10 numbers, grid cost | the projection | OK: 254, 508, 141 GPU-hours |
+| D-030 vs the report | DECISIONS.md | OK, after the "first 10 graphs" wording fix |
 
 ## Sources (sha256)
 
