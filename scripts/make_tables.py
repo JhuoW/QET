@@ -42,15 +42,16 @@ def run_row(run_id: str, raw: Path = RAW) -> tuple[list[str], list[tuple[str, st
     manifest, metrics = json.loads(mpath.read_text()), json.loads(xpath.read_text())
     std = metrics["standard"]
     greedy = std.get("greedy", {})
-    sampled = next((v for k, v in sorted(std.items()) if k.startswith("sample")), {})
-    episodes = sum(sum(v["ends"].values()) for v in std.values())
-    ends: dict[str, int] = {}
-    for v in std.values():
-        for end, count in v["ends"].items():
-            ends[end] = ends.get(end, 0) + count
+    sampled_name = next((k for k in sorted(std) if k.startswith("sample")), None)
+    sampled = std.get(sampled_name, {}) if sampled_name else {}
+    g_out, g_n = greedy.get("outcomes", {}), sum(greedy.get("outcomes", {}).values())
     resume = metrics.get("resume_prefix") or {}
     by_cond = resume.get("by_condition", {})
+    resume_eps = sum(v["episodes"] for k, v in by_cond.items() if k != "empty")
     tokens = manifest.get("tokens") or {}
+    budget = ((manifest.get("budgets") or {}).get("train") or {}).get("token_budget")
+    overshoot = (tokens["budget_used"] - budget) / budget if budget and "budget_used" in tokens else None
+    phases = manifest.get("gpu_hours_by_phase") or {}
     cfg = manifest["configuration"]
     row = [
         run_id,
@@ -60,24 +61,34 @@ def run_row(run_id: str, raw: Path = RAW) -> tuple[list[str], list[tuple[str, st
         manifest["status"],
         _fmt(greedy.get("tasks")),
         _fmt(greedy.get("success")),
-        _fmt(sampled.get("success")),
+        _fmt(g_out.get("wrong_answer", 0) / g_n if g_n else None),
+        _fmt(g_out.get("invalid_action", 0) / g_n if g_n else None),
+        _fmt(g_out.get("budget_exhausted", 0) / g_n if g_n else None),
+        f"{_fmt(sampled.get('success'))} ({sampled_name or '–'})",
         _fmt(sampled.get("pass^4")),
-        _fmt(ends.get("invalid_action", 0) / episodes if episodes else None),
-        _fmt(ends.get("budget_exhausted", 0) / episodes if episodes else None),
+        f"{resume_eps}" if resume else "–",
         _fmt(by_cond.get("on_path", {}).get("success")),
         _fmt(by_cond.get("off_path", {}).get("success")),
         _fmt(resume.get("off_path_gap")),
         _fmt(tokens.get("scored")),
         _fmt(tokens.get("gradient")),
+        _fmt(overshoot, 4),
+        _fmt(phases.get("train")),
         _fmt(manifest.get("gpu_hours")),
         manifest["git"]["commit"][:7] + (" dirty" if manifest["git"]["dirty"] else ""),
     ]
     return row, [(_rel(mpath), _sha(mpath)), (_rel(xpath), _sha(xpath))]
 
 
-HEADER = ["run", "configuration", "backbone", "seed", "status", "tasks", "greedy success", "sampled success",
-          "pass^4", "invalid share", "budget-exhausted share", "resume on-path", "resume off-path", "off-path gap",
-          "scored tokens", "gradient tokens", "GPU-h", "commit"]  # fmt: skip
+HEADER = ["run", "configuration", "backbone", "seed", "status", "tasks", "greedy success", "greedy wrong answer",
+          "greedy invalid", "greedy budget exhausted", "sampled success (setting)", "sampled pass^4",
+          "resume episodes", "resume on-path", "resume off-path", "off-path gap", "scored tokens (incl. warm-up)",
+          "gradient tokens (incl. warm-up)", "budget overshoot", "GPU-h training", "GPU-h run", "commit"]  # fmt: skip
+NOTES = (
+    "Greedy columns: shares of the greedy episodes (one per task). Sampled: mean over tasks of each task's mean over "
+    "its rollouts; pass^4 = C(c, 4) / C(n, 4). Resume episodes: on-path plus off-path starts (the empty start "
+    "repeats the greedy episode). Budget overshoot: tokens past the budget over the budget (D-023f)."
+)
 
 
 def make_table(run_ids: list[str], kind: str, raw: Path = RAW) -> str:
@@ -86,7 +97,14 @@ def make_table(run_ids: list[str], kind: str, raw: Path = RAW) -> str:
         row, src = run_row(run_id, raw)
         rows.append(row)
         sources += src
-    lines = [KINDS[kind], "", "| " + " | ".join(HEADER) + " |", "| " + " | ".join("---" for _ in HEADER) + " |"]
+    lines = [
+        KINDS[kind],
+        "",
+        NOTES,
+        "",
+        "| " + " | ".join(HEADER) + " |",
+        "| " + " | ".join("---" for _ in HEADER) + " |",
+    ]
     lines += ["| " + " | ".join(r) + " |" for r in rows]
     lines += ["", "Sources (sha256):"] + [f"- `{path}` {digest}" for path, digest in sources]
     return "\n".join(lines) + "\n"

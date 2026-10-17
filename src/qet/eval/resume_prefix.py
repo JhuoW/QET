@@ -60,9 +60,11 @@ def evaluate_resume(
     truncation: Mapping[str, Any] | None,
     run_seed: int,
     on_episode: Callable[[dict[str, Any]], None],
+    start_seed: int = 0,
 ) -> None:
+    """`start_seed` fixes the starts (the evaluation seed: the same for every training seed); `run_seed` decoding."""
     for record in records:
-        for start in starts(record, run_seed):
+        for start in starts(record, start_seed):
             env = make_env(tasks_by_id[record.task_id])
             prefix = restore(env, record, start)
             ep = run_episode(env, policy, fmt, renderer=renderer, truncation=truncation, prefix=prefix,

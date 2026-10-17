@@ -17,6 +17,7 @@ from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
 RUNLOG = "docs/RUNLOG.md"  # rewritten by every run, so not counted as dirt
+CODE_DIRS = ("src", "configs", "scripts", "tests")  # untracked files here count as dirt
 
 FIELDS = (  # EVAL_PLAN §10, in that order
     "run_id",
@@ -68,6 +69,8 @@ def git_state(repo: Path = REPO) -> dict[str, Any]:
 
     dirty = sorted(line[3:] for line in git("status", "--porcelain", "--untracked-files=no").splitlines())
     dirty = [f for f in dirty if f != RUNLOG]
+    untracked = git("ls-files", "--others", "--exclude-standard", "--", *CODE_DIRS).splitlines()
+    dirty += [f"untracked: {f}" for f in sorted(untracked)]  # new code a run could import
     return {"commit": git("rev-parse", "HEAD").strip(), "dirty": bool(dirty), "dirty_files": dirty}
 
 

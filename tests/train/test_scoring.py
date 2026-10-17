@@ -256,6 +256,6 @@ def test_batch_and_padding_invariance_in_bf16_on_gpu():
     rel = max(abs(a - b) / abs(b) for a, b in zip(alone, full, strict=True))
     print(f"bf16 vs float32 scores: worst |delta log pi| = {gap:.3g} (relative {rel:.3g}), "
           f"mean log pi = {sum(full) / len(full):.3f}")  # fmt: skip
-    # bf16 rounding alone moved scores by up to 0.9 nats, 2.9% of a mean -30.7 (job 87789.gaas), so an absolute bound
-    # cannot separate it from a wrong dtype path; a different function (wrong prompt, wrong targets) is off by far more
-    assert rel < 0.1
+    # The bound below is the one first committed; bf16 rounding alone reaches 0.9 nats here (jobs 87789.gaas and
+    # 87799.gaas). Replacing it is the human's decision (D-026): the agent never loosens a tolerance (AGENTS.md rule 6).
+    assert gap < 1.0  # a gross error (a wrong dtype path, a different function) shows up as nats

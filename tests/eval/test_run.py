@@ -55,6 +55,10 @@ def test_configs_are_validated(tmp_path):
         {**good, "data": {**good["data"], "test": {"start": 100, "count": 10}}},  # overlaps the training seeds
         {**good, "train": {**good["train"], "learning_rate": 1.0}},
         {**good, "eval": {"decoding": [{"mode": "beam"}]}},
+        {**good, "eval": {"decoding": [{"mode": "greedy", "samples": 8}]}},  # caught at load, not mid-run
+        {**good, "eval": {"decoding": [{"mode": "sample", "temperature": 0}]}},
+        {**good, "eval": {"decoding": []}},
+        {**good, "name": "a/b"},  # names a folder
     ]
     for i, data in enumerate(bad):
         path = tmp_path / f"bad{i}.yaml"
@@ -63,18 +67,34 @@ def test_configs_are_validated(tmp_path):
             load_config(path)
 
 
-def snapshot():
-    roots = [REPO / "results", REPO / "checkpoints"]
-    files = sorted(str(p) for r in roots if r.exists() for p in r.rglob("*"))
-    return files, (REPO / "docs" / "RUNLOG.md").read_bytes()
-
-
 def test_the_dry_run_prints_the_plan_and_writes_nothing(capsys, monkeypatch):
+    """Every way of writing a file fails during the dry run, so any attempted write fails the test."""
+    import builtins
+    import os
+    import pathlib
+
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-    before = snapshot()
+    real_open = builtins.open
+    attempts = []
+
+    def guarded_open(file, mode="r", *args, **kwargs):
+        if any(c in mode for c in "wax+") and "__pycache__" not in str(file):
+            attempts.append(str(file))
+            raise PermissionError(f"the dry run tried to write {file}")
+        return real_open(file, mode, *args, **kwargs)
+
+    def refuse(*args, **kwargs):
+        attempts.append(str(args[:1]))
+        raise PermissionError("the dry run tried to write")
+
+    monkeypatch.setattr(builtins, "open", guarded_open)
+    for name in ("write_text", "write_bytes", "mkdir", "touch", "rename", "replace", "unlink"):
+        monkeypatch.setattr(pathlib.Path, name, refuse)
+    for name in ("makedirs", "mkdir", "replace", "rename", "remove", "unlink"):
+        monkeypatch.setattr(os, name, refuse)
     runner.main(["--config", str(SMOKE), "--dry-run", "--limit", "6"])
     out = capsys.readouterr().out
-    assert snapshot() == before
+    assert attempts == []
     plan = {line.split(": ", 1)[0]: line.split(": ", 1)[1] for line in out.splitlines() if ": " in line}
     train, est = json.loads(plan["train"]), json.loads(plan["estimate"])
     assert train["token_budget"] == 4_000_000 and train["tokens_per_epoch"]["scored"] > 0 and train["steps"] > 0
@@ -106,7 +126,17 @@ def test_a_real_run_writes_the_manifest_the_outputs_and_the_run_log(tmp_path):
     assert phases[0] == "warmup" and phases.count("warmup") == 1 and "train" in phases
     ckpts = sorted(p.name for p in (tmp_path / "ckpt" / out.name).iterdir())
     assert ckpts == ["frac-0.5", "frac-1"]
-    assert (tmp_path / "ckpt" / out.name / "frac-1" / "qet_checkpoint.json").exists()
+    meta = json.loads((tmp_path / "ckpt" / out.name / "frac-1" / "qet_checkpoint.json").read_text())
+    assert meta["files"] and all(len(h) == 64 for h in meta["files"].values())  # adapter weights hashed
+    assert manifest["outputs"]["checkpoints"][str(tmp_path / "ckpt" / out.name / "frac-1")] == meta["files"]
+    assert set(manifest["gpu_hours_by_phase"]) == {"load", "train", "eval"} and "git_end" in manifest
+    starts = json.loads((out / "data" / "resume_starts.json").read_text())
+    data_manifest = json.loads((out / "data" / "data_manifest.json").read_text())
+    assert data_manifest["files"]["resume_starts.json"] == sha256_file(out / "data" / "resume_starts.json")
+    assert [(s["task_id"], s["condition"], s["depth"], s["order"]) for s in starts] == [
+        (r["task_id"], r["condition"], r["depth"], r["prefix_order"]) for r in preds["resume_prefix.jsonl"]
+    ]  # the frozen starts are the ones evaluated
+    assert all(o["outcomes"] for o in metrics["standard"].values())
 
 
 def test_a_failed_run_is_recorded_as_failed(tmp_path):
@@ -121,8 +151,36 @@ def test_a_failed_run_is_recorded_as_failed(tmp_path):
                    runlog_path=log_path, model_factory=broken)  # fmt: skip
     (out,) = (tmp_path / "raw").iterdir()
     manifest = json.loads((out / "manifest.json").read_text())
-    assert manifest["status"] == "failed" and "no model" in manifest["error"]
+    assert manifest["status"] == "failed" and "no model" in manifest["error"] and manifest["gpu_hours"] == 0
     assert runlog.read_rows(log_path)[0]["status"] == "failed"
+
+
+def test_a_terminated_run_is_recorded_as_failed(tmp_path):
+    """The scheduler's SIGTERM becomes SystemExit (run._terminate), which must still mark the run failed."""
+    cfg = small_config(tmp_path)
+    log_path = fresh_runlog(tmp_path)
+
+    def killed(cfg):
+        runner._terminate(15, None)
+
+    with pytest.raises(SystemExit):
+        runner.run(cfg, allow_dirty=True, results_root=tmp_path / "raw", checkpoints_root=tmp_path / "ckpt",
+                   runlog_path=log_path, model_factory=killed)  # fmt: skip
+    (out,) = (tmp_path / "raw").iterdir()
+    assert json.loads((out / "manifest.json").read_text())["status"] == "failed"
+    assert runlog.read_rows(log_path)[0]["status"] == "failed"
+
+
+def test_a_bad_setting_fails_before_the_run_folder_exists(tmp_path, monkeypatch):
+    cfg = small_config(tmp_path)
+
+    def no_data(*args, **kwargs):
+        raise RuntimeError("no data")
+
+    monkeypatch.setattr("qet.datasets.build_dataset", no_data)
+    with pytest.raises(RuntimeError, match="no data"):
+        runner.run(cfg, allow_dirty=True, results_root=tmp_path / "raw", runlog_path=fresh_runlog(tmp_path))
+    assert not (tmp_path / "raw").exists()  # no orphan folder without a manifest
 
 
 def test_runs_need_a_committed_config_and_a_clean_tree(tmp_path, monkeypatch):
@@ -134,6 +192,28 @@ def test_runs_need_a_committed_config_and_a_clean_tree(tmp_path, monkeypatch):
     with pytest.raises(SystemExit, match="clean working tree"):
         runner.run(load_config(SMOKE), results_root=tmp_path / "raw", runlog_path=fresh_runlog(tmp_path))
     assert not (tmp_path / "raw").exists()
+
+
+_WRITER = """
+import sys
+from qet import runlog
+path, prefix = sys.argv[1], sys.argv[2]
+for i in range(15):
+    runlog.append_row(path, {"run_id": f"{prefix}{i}", "status": "running"})
+    runlog.update_row(path, f"{prefix}{i}", status="completed")
+"""
+
+
+def test_concurrent_writers_lose_no_rows(tmp_path):
+    import subprocess
+    import sys
+
+    path = fresh_runlog(tmp_path)
+    procs = [subprocess.Popen([sys.executable, "-c", _WRITER, str(path), p]) for p in "abc"]
+    assert [proc.wait(timeout=120) for proc in procs] == [0, 0, 0]
+    rows = runlog.read_rows(path)
+    assert sorted(r["run_id"] for r in rows) == sorted(f"{p}{i}" for p in "abc" for i in range(15))
+    assert {r["status"] for r in rows} == {"completed"}
 
 
 def test_the_run_log_appends_and_updates_rows(tmp_path):

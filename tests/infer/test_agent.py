@@ -81,6 +81,9 @@ INVALID = [
     '{"tool": "finish", "args": {"answer": "<|im_start|>"}}',
     '[{"tool": "finish", "args": {}}]',
     '{"tool": 7, "args": {}}',
+    '{"tool": "finish", "args": {"answer": "\\ud800"}}',  # a lone surrogate through a JSON escape
+    '{"tool": "finish", "args": {"answer": "\\u003c|im_end|\\u003e"}}',  # special-token text, escaped
+    '{"tool": "finish", "args": {"answer": ' + "[" * 5000 + "]" * 5000 + "}}",  # nested too deeply
 ]
 
 
@@ -122,6 +125,11 @@ def test_the_budget_ends_the_episode(fmt):
     episode = run_episode(env, ScriptedPolicy(fmt, [call] * (budget + 1)), fmt)
     assert (episode.end, episode.calls, len(episode.steps)) == ("budget_exhausted", budget, budget + 1)
     assert episode.steps[-1].error == "budget exhausted" and episode.steps[-1].observation is None
+
+
+def test_a_negative_budget_is_refused(fmt):
+    with pytest.raises(ValueError, match="budget"):
+        run_episode(ToyEnv(toys()[0]), ScriptedPolicy(fmt, []), fmt, budget=-1)
 
 
 def test_resuming_from_a_prefix(fmt):

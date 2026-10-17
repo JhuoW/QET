@@ -92,6 +92,8 @@ def test_function_semantics():
     assert env.step(call["tool"], string_args)[out] != right[out]
     assert "error" in env.step(call["tool"], {})
     assert "error" in env.step("no_such_tool", {})
+    assert "error" in env.step(call["tool"], {k: "\ud800" for k in call["args"]})  # never raises on model input
+    assert "error" in env.step(call["tool"], {k: float("nan") for k in call["args"]})
     assert w1["request_id"] != w2["request_id"]
     contracts = as_contracts(env.contracts())
     assert contracts.canon_obs(call["tool"], w1) == contracts.canon_obs(call["tool"], w2)  # request_id is volatile
@@ -114,6 +116,7 @@ def test_stateful_semantics():
     assert env.step("get_order", {"order": o1})["status"] == "open"
     assert "error" in env.step("get_balance", {"account": 0})
     assert "error" in env.step("get_order", {"order": "x"})
+    assert "error" in env.step("pay", {"account": "\ud800", "order": o1, "amount": amount})
     run_calls(env, toy.calls)
     assert env.check(toy.answer)
     assert env.final_state()["orders"] == {str(o1): "paid", str(o2): "paid"}

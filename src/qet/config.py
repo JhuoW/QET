@@ -8,6 +8,7 @@ uses for its GPU-hour estimate. Every field is explicit; unknown fields are erro
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -71,6 +72,7 @@ class EvalSettings:
     decoding: tuple[dict[str, Any], ...]  # e.g. {"mode": "greedy"}, {"mode": "sample", "samples": 8}
     max_new_tokens: int = 128
     resume_prefix_tasks: int = 0  # test tasks evaluated from legal prefixes (EVAL_PLAN §6); 0 = none
+    eval_seed: int = 0  # seeds the Resume@prefix starts: the same for every training seed of a comparison
 
 
 @dataclass(frozen=True)
@@ -111,6 +113,9 @@ def load_config(path: str | Path) -> RunConfig:
         raise ValueError(f"dtype must be one of {DTYPES}")
     if not isinstance(data["seed"], int) or isinstance(data["seed"], bool):
         raise ValueError("seed must be an integer")
+    for key in ("milestone", "name"):  # they name the run's folders
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", str(data[key])):
+            raise ValueError(f"{key} may contain only letters, digits, '.', '_' and '-'")
 
     d = data["data"]
     _check_keys("data", d, {"env", "kind", "train", "test"}, {"params", "demo_seed", "truncation"})
@@ -138,13 +143,21 @@ def load_config(path: str | Path) -> RunConfig:
             raise ValueError("train: token_budget must be positive and checkpoint fractions in (0, 1]")
 
     e = data["eval"]
-    _check_keys("eval", e, {"decoding"}, {"max_new_tokens", "resume_prefix_tasks"})
+    _check_keys("eval", e, {"decoding"}, {"max_new_tokens", "resume_prefix_tasks", "eval_seed"})
     decoding = tuple(dict(x) for x in e["decoding"])
+    if not decoding:
+        raise ValueError("eval.decoding needs at least one setting")
     for x in decoding:
         _check_keys("eval.decoding", x, {"mode"}, {"temperature", "top_p", "samples"})
         if x["mode"] not in ("greedy", "sample"):
             raise ValueError(f"unknown decoding mode {x['mode']!r}")
-    eval_cfg = EvalSettings(decoding, int(e.get("max_new_tokens", 128)), int(e.get("resume_prefix_tasks", 0)))
+        samples = x.get("samples", 1 if x["mode"] == "greedy" else 8)
+        if not isinstance(samples, int) or samples < 1 or (x["mode"] == "greedy" and samples != 1):
+            raise ValueError("greedy decoding has one rollout; sampling a positive number")
+        if not float(x.get("temperature", 1.0)) > 0 or not 0 < float(x.get("top_p", 1.0)) <= 1:
+            raise ValueError("decoding needs temperature > 0 and 0 < top_p <= 1")
+    eval_cfg = EvalSettings(decoding, int(e.get("max_new_tokens", 128)), int(e.get("resume_prefix_tasks", 0)),
+                            int(e.get("eval_seed", 0)))  # fmt: skip
     return RunConfig(
         path=str(path),
         sha256=hashlib.sha256(raw).hexdigest(),

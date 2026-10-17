@@ -70,9 +70,16 @@ class Episode:
     calls: int  # tool calls the agent executed (the prefix not included)
     prefix: int  # steps executed before the agent started (Resume@prefix)
     steps: list[StepLog] = field(default_factory=list)
+    env_failures: list[dict[str, Any]] = field(default_factory=list)  # the environment's own error log
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _close(episode: Episode, env: Environment) -> Episode:
+    """Attach the environment's own error log (e.g. FuncBenchGen's failure reasons) for the error taxonomy."""
+    episode.env_failures = [dict(f) for f in getattr(env, "failures", None) or []]
+    return episode
 
 
 def run_episode(
@@ -96,6 +103,8 @@ def run_episode(
     finish = x.get("finish", "finish")
     history = [dict(s) for s in prefix]
     budget = max(0, env.step_budget() - len(prefix)) if budget is None else budget
+    if budget < 0:
+        raise ValueError(f"the step budget must be >= 0, got {budget}")
     episode = Episode(env.task_id, rollout, "", False, None, 0, len(prefix))
     for t in range(budget + 1):
         try:
@@ -103,7 +112,7 @@ def run_episode(
         except ValueError as e:  # an observation the prompt cannot carry (D-022d): adapters should prevent it
             episode.end = "render_error"
             episode.steps.append(StepLog("", 0, 0, "", error=str(e)))
-            return episode
+            return _close(episode, env)
         gen = policy.generate(ids, step_seed(run_seed, env.task_id, rollout, t))
         raw = fmt.decode(gen.ids[:-1] if gen.ended else gen.ids)
         log = StepLog(prompt_sha256(ids), len(ids), len(gen.ids), raw)
@@ -112,13 +121,13 @@ def run_episode(
         if isinstance(parsed, Invalid):
             log.error = parsed.reason
             episode.end = "invalid_action"
-            return episode
+            return _close(episode, env)
         log.action = {"tool": parsed.tool, "args": parsed.args}
         if parsed.tool == finish:
             episode.answer = parsed.args.get("answer")
             episode.success = bool(env.check(episode.answer))
             episode.end = "finish"
-            return episode
+            return _close(episode, env)
         if episode.calls >= budget:
             break
         obs = env.step(parsed.tool, parsed.args)
@@ -129,4 +138,4 @@ def run_episode(
         history.append({"tool": parsed.tool, "args": parsed.args, "obs": obs})
     episode.steps[-1].error = "budget exhausted"
     episode.end = "budget_exhausted"
-    return episode
+    return _close(episode, env)

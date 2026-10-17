@@ -19,7 +19,7 @@ from typing import Any
 
 import torch
 
-from qet.core.canonical import JSON, canon_call
+from qet.core.canonical import JSON, canon_call, canon_json
 from qet.train.chat import special_text
 from qet.train.scoring import assert_eval_mode
 
@@ -46,6 +46,21 @@ def _no_constants(name: str) -> Any:
     raise ValueError(f"{name} is not JSON")
 
 
+def _valid_text(x: Any) -> bool:
+    """Whether every string in x, object keys included, is valid Unicode (JSON escapes can spell lone surrogates)."""
+    if isinstance(x, str):
+        try:
+            x.encode("utf-8")
+        except UnicodeEncodeError:
+            return False
+        return True
+    if isinstance(x, dict):
+        return all(_valid_text(k) and _valid_text(v) for k, v in x.items())
+    if isinstance(x, list):
+        return all(_valid_text(v) for v in x)
+    return True
+
+
 def parse_action(text: str, tool_names: Collection[str]) -> Action | Invalid:
     """The model output as an action, or why it is invalid (an invalid action ends the episode, D-006)."""
     token = special_text(text)
@@ -53,7 +68,9 @@ def parse_action(text: str, tool_names: Collection[str]) -> Action | Invalid:
         return Invalid(f"special token {token} in the output")
     try:
         obj = json.loads(text, object_pairs_hook=_no_duplicate_keys, parse_constant=_no_constants)
-    except ValueError as e:  # json.JSONDecodeError is a ValueError
+    except RecursionError:
+        return Invalid("nested too deeply")
+    except ValueError as e:  # not JSON (json.JSONDecodeError is a ValueError), duplicate keys, NaN
         return Invalid(f"not one JSON object: {e}")
     if not isinstance(obj, dict) or set(obj) != {"tool", "args"}:
         return Invalid("not an object with exactly the keys tool and args")
@@ -62,9 +79,16 @@ def parse_action(text: str, tool_names: Collection[str]) -> Action | Invalid:
     if not isinstance(obj["args"], dict):
         return Invalid("args is not an object")
     try:
+        if not _valid_text(obj["args"]):
+            return Invalid("args contain text that is not valid Unicode (a lone surrogate)")
         tool, args = canon_call(obj["tool"], obj["args"])
+    except RecursionError:
+        return Invalid("nested too deeply")
     except (TypeError, ValueError) as e:  # an infinite float, keys that collide after NFC (D-020b)
         return Invalid(f"args have no canonical form: {e}")
+    token = special_text(canon_json(args))  # escapes such as < hide special-token text from the raw check
+    if token:
+        return Invalid(f"special token {token} in the arguments")
     return Action(tool, args)
 
 

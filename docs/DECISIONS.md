@@ -31,6 +31,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-023 | Proposed | Trainer details left open by SPEC §6.5, §8 and D-009 |
 | D-024 | Proposed | Scorer details left open by SPEC §6.7 |
 | D-025 | Proposed | Runner details and what the smoke audit asks of M1 |
+| D-026 | Proposed | Inference and evaluation details (end-of-E1 review) |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -314,7 +315,33 @@ whose checkpoint the configuration runs name as `parent_checkpoint` (its tokens 
 `tokens_at_start`). (e) Before M1 tables are reported, `make_tables.py` gives error rates per decoding setting, per
 call and per task (EVAL_PLAN §7) instead of pooling greedy with sampled episodes, states the episode and task counts of
 the Resume@prefix columns, and reports each run's budget overshoot (D-023f; 0.12% and 0.59% in the smoke runs).
-Default: as described; (b), (d) and (e) to be implemented before the M1 runs.
+Default: as described; (b), (d) and (e) to be implemented before the M1 runs. Update after the end-of-E1 review:
+(e) is implemented (greedy outcome shares, the sampled setting named, Resume@prefix episode counts, overshoot,
+training GPU-hours). Also implemented: untracked files under src/, configs/, scripts/ and tests/ count as
+dirt; the git state is re-read at the end of a run (`git_end`, `code_changed_during_run`); a SIGTERM (walltime,
+qdel) marks the run failed, and failed runs record their GPU-hours; GPU-hours are split into load, training
+and evaluation; the run log is locked and written through unique temp files; checkpoints record the sha256 of
+their files; demonstrations pass the environment's checker before Compile. Still open for M1: (b), (d), an
+evaluation-only run that loads a saved checkpoint by path and hash (EVAL_PLAN §8 budget fractions), and the
+"no history" condition of the chronological baselines in Resume@prefix (EVAL_PLAN §6.5, M1.7).
+
+### D-026 Inference and evaluation details (end-of-E1 review)
+`src/qet/infer/`, `src/qet/eval/`, `tests/train/test_scoring.py`. (a) The GPU test's bf16-vs-float32 check keeps the
+bound first committed, |delta log pi| < 1.0 nat; bf16 rounding alone reaches 0.899 nats there (2.7% of a mean log pi
+of -30.7; jobs 87789.gaas and 87799.gaas), so the margin is thin, and a looser bound is the human's decision (Q18;
+AGENTS.md rule 6). The spec's tolerance, batch invariance within 1e-4, is separate and unchanged (worst 0). (b) Decoding
+uses an explicit loop rather than Hugging Face `generate`, which fills unset fields from the model's generation_config
+(D-022f); it stops only at the end-of-turn id (`<|endoftext|>` does not stop it, and an output without the end of
+turn is invalid). A vLLM path for scale must reproduce: stop only at the end of turn, the given T and top-p, top-k off,
+no penalties, per-step seeds. (c) Parsing is stricter than SPEC §7's "lenient about spacing and key order" in four
+ways, each an invalid action (D-006): duplicate keys at any depth; lone surrogates spelled through JSON escapes;
+special-token text inside decoded arguments (D-022d); nesting deeper than Python's recursion limit. (d) Resume@prefix
+runs the first decoding setting (greedy, rollout 0); its empty start repeats the standard greedy episode. Its starts
+are fixed by an evaluation seed (default 0), the same for every training seed of a comparison, and written to the data
+manifest (`resume_starts.json`). (e) Error taxonomy: episodes end in success, wrong answer, invalid action, budget
+exhausted or render error; errors are counted per call and per episode by the environment's own reason when it logs
+one (FuncBenchGen: value not yet known, incorrect value), else by the step's observation-error flag. Default: as
+described; cheap to reverse.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
@@ -372,3 +399,7 @@ Default: as described; (b), (d) and (e) to be implemented before the M1 runs.
   ablation a4, because otherwise a4 equals configuration 6 on every graph below S_max and "exact vs a4 with K in
   {2, 4, 8}" (claim C5, figure F5) measures nothing there. SPEC §8 read literally ("§6.6 with the given K") samples
   only above S_max. Confirm D-023a before M1.6, since it fixes what a pre-registered comparison means.
+- [ ] Q18 (from the end-of-E1 review; D-026a) The GPU test compares bf16 and float32 scores of the same weights with
+  the bound |delta log pi| < 1.0 nat, set before any measurement; bf16 rounding alone gives 0.899 nats on its 24 pairs.
+  Keep it, or replace it with a bound set from bf16's precision, for example 0.1 nats per target token (2^-8 relative
+  precision on logits up to about 30; the measured worst is about 0.045 per token)? The agent does not loosen it.

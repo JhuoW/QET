@@ -15,6 +15,7 @@ import argparse
 import json
 import math
 import os
+import signal
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -143,6 +144,11 @@ def load_model(cfg: RunConfig):
     return model.to("cuda" if torch.cuda.is_available() else "cpu").eval()
 
 
+def _terminate(signum: int, frame: Any) -> None:
+    """A scheduler's SIGTERM (walltime, qdel) becomes SystemExit, so the run is recorded as failed, not left running."""
+    raise SystemExit(128 + signum)
+
+
 def run(
     cfg: RunConfig,
     *,
@@ -156,22 +162,27 @@ def run(
     import torch
 
     from qet.datasets import build_dataset, write_dataset
+    from qet.eval.resume_prefix import starts
     from qet.eval.runner import decoding_settings
     from qet.train.chat import ChatFormat, backbone
 
     git = git_state()
     if not allow_dirty and (git["dirty"] or not is_committed(cfg.path)):
         raise SystemExit(f"a run needs a committed config and a clean working tree (dirty: {git['dirty_files']})")
+    t0 = time.perf_counter()
+    gpus = 1 if torch.cuda.is_available() else 0
+    # Whatever can fail on the config or the data fails here, before the run folder exists.
+    fmt = ChatFormat.load(cfg.backbone)
+    ds = build_dataset(cfg.data, limit=limit)
+    decodings = decoding_settings(cfg.eval)
+    resume = [{"task_id": rec.task_id, "condition": s.condition, "depth": s.depth, "order": list(s.order)}
+              for rec in ds.test_records[: cfg.eval.resume_prefix_tasks]
+              for s in starts(rec, cfg.eval.eval_seed)]  # fmt: skip
     created = utc_now()
     run_id = f"{cfg.milestone}-{cfg.name}-s{cfg.seed}-{created:%Y%m%dT%H%M%SZ}"
     out = Path(results_root) / run_id
     out.mkdir(parents=True)
-    t0 = time.perf_counter()
-    fmt = ChatFormat.load(cfg.backbone)
-    ds = build_dataset(cfg.data, limit=limit)
-    data_path, data_sha = write_dataset(ds, out / "data")
     m, t = cfg.method, cfg.train
-    decodings = decoding_settings(cfg.eval)
     manifest = Manifest(out / "manifest.json", {
         "run_id": run_id,
         "created_at": created.isoformat(),
@@ -185,7 +196,7 @@ def run(
         "k": t.k if t else None,
         "backbone": {"id": cfg.backbone, "revision": backbone(cfg.backbone).revision, "dtype": cfg.dtype},
         "tokenizer": fmt.fingerprint(),
-        "data_manifest": {"path": _rel(data_path), "sha256": data_sha},
+        "data_manifest": None,  # written next
         "benchmark": {"name": cfg.data.env, "code": "src/qet/envs/toy.py", "commit": git["commit"],
                       "evaluator": "ToyEnv.check", "contract_source": ds.contract_source,
                       "contracts_sha256": sha256_json(ds.contracts)},
@@ -194,48 +205,72 @@ def run(
                       "max_new_tokens": d.max_new_tokens} for n, d, r in decodings],
         "budgets": {"train": None if t is None else {k: getattr(t, k) for k in t.__dataclass_fields__},
                     "step_budget": "twice the minimum number of calls (toy)",
-                    "resume_prefix_tasks": cfg.eval.resume_prefix_tasks, "limit": limit},
+                    "resume_prefix_tasks": cfg.eval.resume_prefix_tasks, "eval_seed": cfg.eval.eval_seed,
+                    "limit": limit},
         "hardware": hardware(),
         "libraries": libraries(),
         "tokens": None,
         "gpu_hours": None,
-        "parent_checkpoint": None,  # the format warm-up runs inside this run (D-010)
+        "parent_checkpoint": None,  # the format warm-up runs inside this run (D-010, D-025d)
         "status": "running",
     })  # fmt: skip
-    runlog.append_row(runlog_path, {
-        "run_id": run_id, "submitted": created.isoformat(), "milestone": cfg.milestone, "config": _rel(cfg.path),
-        "method": f"{m.config_id} {m.name}", "backbone": cfg.backbone, "seed": cfg.seed,
-        "commit": git["commit"][:7] + ("+dirty" if git["dirty"] else ""), "status": "running", "GPU-h": "",
-        "path": _rel(out), "note": f"limit={limit}" if limit else "",
-    })  # fmt: skip
     try:
-        tokens, outputs = _execute(cfg, ds, fmt, out, Path(checkpoints_root) / run_id, model_factory)
-        gpus = 1 if torch.cuda.is_available() else 0
-        gpu_hours = (time.perf_counter() - t0) / 3600 * gpus
-        manifest.update(tokens=tokens, gpu_hours=gpu_hours, status="completed", finished_at=utc_now().isoformat(),
-                        outputs=outputs)  # fmt: skip
-        runlog.update_row(runlog_path, run_id, status="completed", **{"GPU-h": f"{gpu_hours:.3f}"})
+        previous = signal.signal(signal.SIGTERM, _terminate)
+    except ValueError:  # not the main thread: no handler
+        previous = None
+    row_added = False
+    try:
+        data_path, data_sha = write_dataset(ds, out / "data", resume_starts=resume)
+        manifest.update(data_manifest={"path": _rel(data_path), "sha256": data_sha})
+        runlog.append_row(runlog_path, {
+            "run_id": run_id, "submitted": created.isoformat(), "milestone": cfg.milestone, "config": _rel(cfg.path),
+            "method": f"{m.config_id} {m.name}", "backbone": cfg.backbone, "seed": cfg.seed,
+            "commit": git["commit"][:7] + ("+dirty" if git["dirty"] else ""), "status": "running", "GPU-h": "",
+            "path": _rel(out), "note": f"limit={limit}" if limit else "",
+        })  # fmt: skip
+        row_added = True
+        tokens, outputs, seconds = _execute(cfg, ds, fmt, out, Path(checkpoints_root) / run_id, model_factory)
+        total = (time.perf_counter() - t0) / 3600 * gpus
+        git_end = git_state()
+        manifest.update(
+            tokens=tokens, gpu_hours=total, gpu_hours_by_phase={k: v / 3600 * gpus for k, v in seconds.items()},
+            status="completed", finished_at=utc_now().isoformat(), outputs=outputs, git_end=git_end,
+            code_changed_during_run=(git_end["commit"], git_end["dirty_files"]) != (git["commit"], git["dirty_files"]),
+        )  # fmt: skip
+        runlog.update_row(runlog_path, run_id, status="completed", **{"GPU-h": f"{total:.3f}"})
     except BaseException as e:
-        manifest.update(status="failed", error=f"{type(e).__name__}: {e}", finished_at=utc_now().isoformat())
-        runlog.update_row(runlog_path, run_id, status="failed", note=f"{type(e).__name__}")
+        total = (time.perf_counter() - t0) / 3600 * gpus
+        manifest.update(status="failed", error=f"{type(e).__name__}: {e}", finished_at=utc_now().isoformat(),
+                        gpu_hours=total)  # fmt: skip
+        if row_added:
+            runlog.update_row(runlog_path, run_id, status="failed", note=type(e).__name__, **{"GPU-h": f"{total:.3f}"})
         raise
+    finally:
+        if previous is not None:
+            signal.signal(signal.SIGTERM, previous)
     return out
 
 
-def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory) -> tuple[dict[str, Any], dict[str, Any]]:
+def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory) -> tuple[dict, dict, dict[str, float]]:
     import torch
 
     from qet.eval.metrics import summarize
     from qet.eval.resume_prefix import evaluate_resume
     from qet.eval.runner import decoding_settings, evaluate_tasks
     from qet.infer.decoding import HFSampler
+    from qet.manifest import sha256_file
     from qet.train.scoring import TokenCounts
     from qet.train.trainer import LMScorer, PackBuilder, TrainConfig, add_lora, train
 
+    clock = time.perf_counter()
+    seconds: dict[str, float] = {}
     torch.manual_seed(cfg.seed)
     model = (model_factory or load_model)(cfg)
+    seconds["load"] = time.perf_counter() - clock
     tokens: dict[str, Any] = {}
+    checkpoints: dict[str, dict[str, str]] = {}
     t, m = cfg.train, cfg.method
+    clock = time.perf_counter()
     with open(out / "train_log.jsonl", "w", encoding="utf-8") as log:
 
         def logger(phase: str) -> Callable[[dict[str, Any]], None]:
@@ -261,8 +296,10 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory) -> tuple[di
             def save(label: str, row: dict[str, Any]) -> None:
                 path = ckpt_dir / label
                 model.save_pretrained(path)
+                files = {p.name: sha256_file(p) for p in sorted(path.iterdir()) if p.is_file()}
                 meta = {k: row.get(k) for k in ("step", "epoch", "tokens_used", "budget_fraction")}
-                (path / "qet_checkpoint.json").write_text(json.dumps(meta) + "\n", encoding="utf-8")
+                (path / "qet_checkpoint.json").write_text(json.dumps({**meta, "files": files}) + "\n", encoding="utf-8")
+                checkpoints[_rel(path)] = files
 
             opt = torch.optim.AdamW(scorer.parameters(), lr=t.lr)
             summary = train(scorer, PackBuilder(fmt, ds.contracts, m, **builder_args), ds.train_records, tcfg, opt,
@@ -272,7 +309,9 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory) -> tuple[di
                           scored=warm["scored"]["tokens"] + summary["scored"]["tokens"],
                           gradient=warm["gradient"]["tokens"] + summary["gradient"]["tokens"],
                           budget_used=summary["tokens_used"])  # fmt: skip
+    seconds["train"] = time.perf_counter() - clock
 
+    clock = time.perf_counter()
     pred_dir = out / "predictions"
     pred_dir.mkdir()
     rows: list[dict[str, Any]] = []
@@ -293,19 +332,19 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory) -> tuple[di
             name, dcfg, _ = decoding_settings(cfg.eval)[0]
             by_id = {task.task_id: task for task in ds.test_tasks}
             evaluate_resume(ds.test_records[: cfg.eval.resume_prefix_tasks], by_id, ds.make_env, policy_for(dcfg),
-                            fmt, decoding=name, **common)  # fmt: skip
+                            fmt, decoding=name, start_seed=cfg.eval.eval_seed, **common)  # fmt: skip
     finally:
         for f in files.values():
             f.close()
+    seconds["eval"] = time.perf_counter() - clock
     tokens["eval"] = {"episodes": len(rows),
                       "prompt": sum(s["prompt_tokens"] for r in rows for s in r["steps"]),
                       "output": sum(s["output_tokens"] for r in rows for s in r["steps"])}  # fmt: skip
     metrics = summarize(rows)
     (out / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
     outputs = {"metrics": _rel(out / "metrics.json"), "train_log": _rel(out / "train_log.jsonl"),
-               "predictions": sorted(_rel(p) for p in pred_dir.iterdir()),
-               "checkpoints": sorted(_rel(p) for p in ckpt_dir.iterdir()) if ckpt_dir.exists() else []}  # fmt: skip
-    return tokens, outputs
+               "predictions": sorted(_rel(p) for p in pred_dir.iterdir()), "checkpoints": checkpoints}  # fmt: skip
+    return tokens, outputs, seconds
 
 
 def main(argv: list[str] | None = None) -> None:

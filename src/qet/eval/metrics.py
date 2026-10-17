@@ -22,6 +22,31 @@ def _mean(xs: Sequence[float]) -> float | None:
     return math.fsum(xs) / len(xs) if xs else None
 
 
+def outcomes(rows: Sequence[dict[str, Any]]) -> dict[str, int]:
+    """Episode outcomes: a finish with a wrong answer is not lumped with successes (EVAL_PLAN §7)."""
+    out = Counter("success" if r["success"] else ("wrong_answer" if r["end"] == "finish" else r["end"]) for r in rows)
+    return dict(sorted(out.items()))
+
+
+def call_errors(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """Errors per call and per episode, by the environment's own reason when it logs one (FuncBenchGen: value not yet
+    known, incorrect value), else by the step's error flag."""
+    calls = sum(r["calls"] for r in rows)
+    per_call: Counter[str] = Counter()
+    per_episode: Counter[str] = Counter()
+    for r in rows:
+        reasons = [f["reason"] for f in r.get("env_failures") or []]
+        if not reasons:
+            reasons = [s["error"] for s in r["steps"] if s.get("error") == "observation error"]
+        per_call.update(reasons)
+        per_episode.update(set(reasons))
+    return {
+        "calls": calls,
+        "errors_per_call": {k: v / calls for k, v in sorted(per_call.items())} if calls else {},
+        "episodes_with_error": {k: v / len(rows) for k, v in sorted(per_episode.items())} if rows else {},
+    }
+
+
 def summarize(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
     out: dict[str, Any] = {"standard": {}, "resume_prefix": None}
     standard = [r for r in rows if r["condition"] == "standard"]
@@ -43,7 +68,9 @@ def summarize(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
             if n >= 4
             else None,
             "ends": dict(sorted(Counter(r["end"] for r in rs).items())),
+            "outcomes": outcomes(rs),
             "calls_per_episode": _mean([r["calls"] for r in rs]),
+            **call_errors(rs),
         }
     resume = [r for r in rows if r["condition"] != "standard"]
     if resume:

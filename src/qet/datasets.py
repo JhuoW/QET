@@ -11,8 +11,8 @@ from typing import Any
 
 from qet.config import DataConfig
 from qet.core.compile import GraphRecord, compile_report, write_records
-from qet.envs.base import Environment
-from qet.envs.toy import ToyEnv, ToyTask, compile_toy, make_tasks
+from qet.envs.base import Environment, run_calls
+from qet.envs.toy import ToyEnv, ToyTask, compile_toy, demonstration, make_tasks
 from qet.manifest import sha256_file, sha256_json
 
 
@@ -45,6 +45,12 @@ def build_dataset(cfg: DataConfig, *, limit: int | None = None) -> Dataset:
     n_test = cfg.test.count if limit is None else min(limit, cfg.test.count)
     train = make_tasks(cfg.kind, range(cfg.train.start, cfg.train.start + n_train), **cfg.params)
     test = make_tasks(cfg.kind, range(cfg.test.start, cfg.test.start + n_test), **cfg.params)
+    for t in train + test:  # demonstrations are verified by the environment's checker (SPEC §1)
+        demo, _ = demonstration(t, cfg.demo_seed)
+        env = ToyEnv(t)
+        run_calls(env, demo[:-1])
+        if not env.check(demo[-1]["args"]["answer"]):
+            raise ValueError(f"the demonstration of {t.task_id} does not pass the checker")
     train_records = [compile_toy(t, cfg.demo_seed)[0] for t in train]
     test_records = [compile_toy(t, cfg.demo_seed)[0] for t in test]
     spec = {"env": cfg.env, "kind": cfg.kind, "params": cfg.params, "demo_seed": cfg.demo_seed,
@@ -56,10 +62,11 @@ def build_dataset(cfg: DataConfig, *, limit: int | None = None) -> Dataset:
     )
 
 
-def write_dataset(ds: Dataset, out: Path) -> tuple[Path, str]:
-    """Write the records, the evaluation task list, the compile report and the data manifest; return the manifest's
-    path and sha256."""
+def write_dataset(ds: Dataset, out: Path, resume_starts: list[dict[str, Any]] | None = None) -> tuple[Path, str]:
+    """Write the records, the evaluation task list, the compile report, the Resume@prefix starts (frozen by the
+    evaluation seed, the same for every training seed) and the data manifest; return the manifest's path and sha256."""
     out.mkdir(parents=True, exist_ok=True)
+    (out / "resume_starts.json").write_text(json.dumps(resume_starts or []) + "\n", encoding="utf-8")
     write_records(out / "train_records.jsonl", ds.train_records)
     write_records(out / "test_records.jsonl", ds.test_records)
     (out / "test_tasks.json").write_text(json.dumps([t.task_id for t in ds.test_tasks]) + "\n", encoding="utf-8")
@@ -71,7 +78,13 @@ def write_dataset(ds: Dataset, out: Path) -> tuple[Path, str]:
         "contract_source": ds.contract_source,
         "files": {
             name: sha256_file(out / name)
-            for name in ("train_records.jsonl", "test_records.jsonl", "test_tasks.json", "compile_report.json")
+            for name in (
+                "train_records.jsonl",
+                "test_records.jsonl",
+                "test_tasks.json",
+                "compile_report.json",
+                "resume_starts.json",
+            )
         },  # fmt: skip
         "train_task_ids": [r.task_id for r in ds.train_records],
         "test_task_ids": [t.task_id for t in ds.test_tasks],

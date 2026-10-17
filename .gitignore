@@ -3,6 +3,8 @@
 /checkpoints/
 /data/
 /logs/
+/docs/.RUNLOG.md.lock
+/docs/.RUNLOG.md.*.tmp
 .env
 
 # Python and tooling

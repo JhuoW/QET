@@ -80,7 +80,7 @@ def test_evaluate_resume_writes_one_row_per_start(fmt):
 
     rows = []
     evaluate_resume([record], {toy.task_id: toy}, ToyEnv, Answer(), fmt, decoding="greedy", renderer="quotient",
-                    truncation=None, run_seed=1, on_episode=rows.append)  # fmt: skip
+                    truncation=None, run_seed=5, on_episode=rows.append, start_seed=1)  # fmt: skip
     ss = starts(record, seed=1)
     assert [(r["condition"], r["depth"], tuple(r["prefix_order"])) for r in rows] == [
         (s.condition, s.depth, s.order) for s in ss
@@ -93,9 +93,11 @@ def test_pass_k():
     assert pass_k(5, 8, 4) == pytest.approx(5 / 70) and pass_k(1, 2, 4) is None
 
 
-def row(task, decoding, success, end="finish", condition="standard", depth=0, calls=2):
+def row(task, decoding, success, end="finish", condition="standard", depth=0, calls=2, failures=(), errors=()):
+    steps = [{"error": x} for x in errors]
+    failures = [{"reason": r} for r in failures]
     return {"task_id": task, "decoding": decoding, "success": success, "end": end, "condition": condition,
-            "depth": depth, "calls": calls}  # fmt: skip
+            "depth": depth, "calls": calls, "steps": steps, "env_failures": failures}  # fmt: skip
 
 
 def test_summarize():
@@ -106,6 +108,12 @@ def test_summarize():
     m = summarize(rows)
     g, s = m["standard"]["greedy"], m["standard"]["s"]
     assert (g["tasks"], g["success"], g["pass^4"], g["ends"]) == (2, 0.5, None, {"finish": 1, "invalid_action": 1})
+    assert g["outcomes"] == {"invalid_action": 1, "success": 1} and s["outcomes"] == {"success": 7, "wrong_answer": 9}
+    errs = summarize([row("a", "g", False, calls=4, failures=["Variable value not yet known"] * 2),
+                      row("b", "g", True, calls=4, errors=["observation error"])])["standard"]["g"]  # fmt: skip
+    assert errs["calls"] == 8 and errs["errors_per_call"] == {"Variable value not yet known": 0.25,
+                                                               "observation error": 0.125}  # fmt: skip
+    assert errs["episodes_with_error"] == {"Variable value not yet known": 0.5, "observation error": 0.5}
     assert s["success"] == pytest.approx((6 / 8 + 1 / 8) / 2) and s["rollouts_per_task"] == 8
     assert s["pass^4"] == pytest.approx((15 / 70 + 0) / 2)  # C(6,4) / C(8,4) = 15/70
     r = m["resume_prefix"]

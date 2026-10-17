@@ -193,7 +193,7 @@ class ToyEnv:
     def step(self, tool: str, args: Mapping[str, JSON]) -> JSON:
         self._counter += 1
         try:
-            canon(args)
+            canon_json(args).encode("utf-8")  # lone surrogates cannot be encoded
         except (TypeError, ValueError) as e:  # NaN, infinities, colliding keys: the agent should not get here (D-020b)
             obs: dict[str, JSON] = {"error": f"arguments are not canonical JSON: {e}"}
         else:
