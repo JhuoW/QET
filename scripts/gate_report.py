@@ -52,6 +52,11 @@ def num(x: float | None, digits: int = 3) -> str:
     return f"{x:,.{digits}f}" if isinstance(x, float) else f"{x:,}"
 
 
+def binned(hist: dict[str, int], bins: list[tuple[int, int]]) -> list[int]:
+    """Counts of a {value: count} histogram (string keys) in inclusive [lo, hi] bins."""
+    return [sum(v for k, v in hist.items() if lo <= int(k) <= hi) for lo, hi in bins]
+
+
 def mcnemar_pairs(delta: float, psi: float, alpha: float = 0.05, power: float = 0.8) -> int:
     """Paired tasks needed to detect a success-rate difference delta with discordant share psi (Connor 1987)."""
     z_a, z_b = NormalDist().inv_cdf(1 - alpha / 2), NormalDist().inv_cdf(power)
@@ -93,12 +98,17 @@ def gate_a(compile_run: Path, stats_run: Path, pilot_run: Path | None, src: Sour
     out += ["", "\"Final\" is after the chain fallback; FuncBenchGen precision below 1 comes from the fallbacks, the "
             "stateful extension's from decision edges around payments that truly commute.", ""]  # fmt: skip
 
-    out += ["## 3. Structure: width, incomparable pairs, states", ""]
-    for s in ("train", "test"):
-        if s in reports:
-            c = reports[s]["compile"]
-            out.append(f"- {s}: width distribution {c['width']}; incomparable-pair share "
-                       f"{pct(c['incomparable_pair_share'])}; states per graph {c['states_per_graph']}")  # fmt: skip
+    out += ["## 3. Structure: width, incomparable pairs, states", "",
+            "| split | width 1 | 2 | 3-4 | 5+ | incomparable pairs | states ≤ 16 | 17-64 | 65-256 | > S_max |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]  # fmt: skip
+    for s, r in reports.items():
+        c = r["compile"]
+        w = binned(c["width"], [(1, 1), (2, 2), (3, 4), (5, 10**9)])
+        st = binned({k: v for k, v in c["states_per_graph"].items() if k.isdigit()}, [(0, 16), (17, 64), (65, 256)])
+        over = sum(v for k, v in c["states_per_graph"].items() if not k.isdigit())
+        total = c["tasks_compiled"]
+        out.append(f"| {s} | " + " | ".join(pct(x / total) for x in w) + f" | {pct(c['incomparable_pair_share'])} | "
+                   + " | ".join(pct(x / total) for x in st) + f" | {pct(over / total)} |")  # fmt: skip
     out += [f"- pilot sample ({stats['graphs']} training graphs): width bins {stats['width_bins']}; "
             f"{stats['states']['above_s_max']} graphs above S_max = {stats['s_max']} (trained on a sub-lattice of "
             f"K = {stats['k']} orders), mean exact lattice size {num(stats['states']['mean_exact'], 1)}",
