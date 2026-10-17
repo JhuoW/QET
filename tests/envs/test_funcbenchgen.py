@@ -10,7 +10,15 @@ import pytest
 
 from qet.core.lattice import node_masks, random_topological_order
 from qet.envs.base import run_calls
-from qet.envs.funcbenchgen import FuncBenchGenEnv, GridConfig, _global_rng, _repo, _seeded_state, build_task
+from qet.envs.funcbenchgen import (
+    FuncBenchGenEnv,
+    GridConfig,
+    _global_rng,
+    _repo,
+    _seeded_state,
+    build_task,
+    graph_payloads,
+)
 
 CELLS = [
     GridConfig(core_nodes=5, max_critical_path=1, num_total_nodes=5),
@@ -18,6 +26,14 @@ CELLS = [
     GridConfig(core_nodes=10, max_critical_path=4, num_total_nodes=20, num_disconnected_nodes=5),
     GridConfig(core_nodes=20, max_critical_path=10, num_total_nodes=30),
 ]
+
+
+@pytest.fixture(scope="module", autouse=True)
+def prefetch():
+    """All graphs these tests build, in one call of the adapter's graph helper (one process start, not one per task)."""
+    wanted = [(c, s) for c in CELLS for s in range(0, 1500, 100)]
+    wanted += [(CELLS[1], 7), (CELLS[2], 300), (CELLS[0], 5), (CELLS[3], 11), (CELLS[1], 9)]
+    graph_payloads(wanted)
 
 
 @pytest.mark.parametrize("cfg", CELLS, ids=lambda c: c.tag())
