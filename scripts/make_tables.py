@@ -44,7 +44,11 @@ def run_row(run_id: str, raw: Path = RAW) -> tuple[list[str], list[tuple[str, st
     greedy = std.get("greedy", {})
     sampled_name = next((k for k in sorted(std) if k.startswith("sample")), None)
     sampled = std.get(sampled_name, {}) if sampled_name else {}
-    g_out, g_n = greedy.get("outcomes", {}), sum(greedy.get("outcomes", {}).values())
+    g_out, g_n = greedy.get("outcomes"), sum((greedy.get("outcomes") or {}).values())
+
+    def share(key: str) -> str:  # runs from before the outcome taxonomy did not record it
+        return "not recorded" if g_out is None else _fmt(g_out.get(key, 0) / g_n if g_n else None)
+
     resume = metrics.get("resume_prefix") or {}
     by_cond = resume.get("by_condition", {})
     resume_eps = sum(v["episodes"] for k, v in by_cond.items() if k != "empty")
@@ -61,9 +65,9 @@ def run_row(run_id: str, raw: Path = RAW) -> tuple[list[str], list[tuple[str, st
         manifest["status"],
         _fmt(greedy.get("tasks")),
         _fmt(greedy.get("success")),
-        _fmt(g_out.get("wrong_answer", 0) / g_n if g_n else None),
-        _fmt(g_out.get("invalid_action", 0) / g_n if g_n else None),
-        _fmt(g_out.get("budget_exhausted", 0) / g_n if g_n else None),
+        share("wrong_answer"),
+        share("invalid_action"),
+        share("budget_exhausted"),
         f"{_fmt(sampled.get('success'))} ({sampled_name or '–'})",
         _fmt(sampled.get("pass^4")),
         f"{resume_eps}" if resume else "–",

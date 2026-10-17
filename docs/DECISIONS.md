@@ -324,6 +324,11 @@ and evaluation; the run log is locked and written through unique temp files; che
 their files; demonstrations pass the environment's checker before Compile. Still open for M1: (b), (d), an
 evaluation-only run that loads a saved checkpoint by path and hash (EVAL_PLAN §8 budget fractions), and the
 "no history" condition of the chronological baselines in Resume@prefix (EVAL_PLAN §6.5, M1.7).
+Follow-up review: bookkeeping after completion (the end-of-run git check, the RUNLOG update) is recorded in the
+manifest and never turns a completed run into a failed one; `make smoke` runs each configuration in its own
+process; untracked files under third_party/ and top-level .py files also count as dirt; the dry run counts the
+starts the run evaluates. For M1, adapters verify with the environment's checker the exact trace they compile
+(the toy env regenerates an identical one).
 
 ### D-026 Inference and evaluation details (end-of-E1 review)
 `src/qet/infer/`, `src/qet/eval/`, `tests/train/test_scoring.py`. (a) The GPU test's bf16-vs-float32 check keeps the

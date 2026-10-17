@@ -1,6 +1,7 @@
 """E1.6: run configs, the dry run, manifests (every EVAL_PLAN §10 field) and the run log. Real runs here use a tiny
 random model and temporary folders; the GPU runs are E1.7's."""
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -160,15 +161,74 @@ def test_a_terminated_run_is_recorded_as_failed(tmp_path):
     cfg = small_config(tmp_path)
     log_path = fresh_runlog(tmp_path)
 
-    def killed(cfg):
-        runner._terminate(15, None)
+    import os
+    import signal
 
-    with pytest.raises(SystemExit):
+    def killed(cfg):
+        os.kill(os.getpid(), signal.SIGTERM)  # what PBS sends at the walltime or on qdel
+
+    before = signal.getsignal(signal.SIGTERM)
+    with pytest.raises(SystemExit) as stop:
         runner.run(cfg, allow_dirty=True, results_root=tmp_path / "raw", checkpoints_root=tmp_path / "ckpt",
                    runlog_path=log_path, model_factory=killed)  # fmt: skip
+    assert stop.value.code == 128 + signal.SIGTERM and signal.getsignal(signal.SIGTERM) == before  # handler restored
     (out,) = (tmp_path / "raw").iterdir()
     assert json.loads((out / "manifest.json").read_text())["status"] == "failed"
     assert runlog.read_rows(log_path)[0]["status"] == "failed"
+
+
+@pytest.mark.slow  # a tiny-model run end to end
+def test_bookkeeping_after_completion_never_fails_a_run(tmp_path, monkeypatch):
+    cfg = small_config(tmp_path)
+    log_path = fresh_runlog(tmp_path)
+    calls = []
+    real_state = runner.git_state
+
+    def flaky_state():
+        calls.append(1)
+        if len(calls) > 1:
+            raise OSError("git went away")
+        return real_state()
+
+    def broken_update(path, run_id, **fields):
+        raise OSError("run log unwritable")
+
+    monkeypatch.setattr(runner, "git_state", flaky_state)
+    monkeypatch.setattr(runner.runlog, "update_row", broken_update)
+    out = runner.run(cfg, allow_dirty=True, results_root=tmp_path / "raw", checkpoints_root=tmp_path / "ckpt",
+                     runlog_path=log_path, model_factory=tiny_model)  # fmt: skip
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["status"] == "completed" and manifest["outputs"] and manifest["tokens"]
+    assert "git went away" in manifest["git_end"]["error"] and manifest["code_changed_during_run"] is None
+    assert "run log unwritable" in manifest["runlog_error"]
+
+
+def test_the_dry_run_counts_the_starts_the_run_evaluates(monkeypatch):
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    cfg = load_config(SMOKE)
+    other = dataclasses.replace(cfg, seed=3)  # starts follow eval.eval_seed, not the training seed
+    assert runner.plan(other, limit=8)["eval"] == runner.plan(cfg, limit=8)["eval"]
+
+
+def test_untracked_code_counts_as_dirt(tmp_path):
+    import subprocess
+
+    from qet.manifest import git_state
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q")
+    (tmp_path / "a.txt").write_text("a")
+    git("add", "a.txt")
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x")
+    (tmp_path / "notes.md").write_text("notes")  # untracked, not code
+    assert git_state(tmp_path)["dirty"] is False
+    (tmp_path / "sitecustomize.py").write_text("")  # a top-level module can shadow imports
+    (tmp_path / "third_party").mkdir()
+    (tmp_path / "third_party" / "lib.py").write_text("")
+    state = git_state(tmp_path)
+    assert state["dirty"] and state["dirty_files"] == ["untracked: sitecustomize.py", "untracked: third_party/lib.py"]
 
 
 def test_a_bad_setting_fails_before_the_run_folder_exists(tmp_path, monkeypatch):

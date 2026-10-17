@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import fcntl
 import os
+import stat
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -17,7 +18,7 @@ HEADER = "| " + " | ".join(COLUMNS) + " |"
 
 def _cell(value: Any) -> str:
     text = "" if value is None else str(value)
-    return text.replace("\r", " ").replace("\n", " ").replace("|", "\\|")
+    return " ".join(text.splitlines()).replace("|", "\\|")  # every line separator str.splitlines() knows
 
 
 def _line(row: dict[str, Any]) -> str:
@@ -43,6 +44,7 @@ def _write(path: Path, lines: list[str]) -> None:
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")  # unique per writer
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
+    os.chmod(tmp, stat.S_IMODE(path.stat().st_mode))  # mkstemp makes 0600; keep the log's own permissions
     os.replace(tmp, path)
 
 

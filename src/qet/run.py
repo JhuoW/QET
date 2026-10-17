@@ -106,7 +106,7 @@ def plan(cfg: RunConfig, *, limit: int | None = None) -> dict[str, Any]:
         eval_tokens += rollouts * sum(v[1] for v in per_task.values())
     for rec in ds.test_records[: cfg.eval.resume_prefix_tasks]:
         prompts, _ = per_task[rec.task_id]
-        for s in starts(rec, cfg.seed):
+        for s in starts(rec, cfg.eval.eval_seed):  # the same starts the run evaluates
             episodes += 1
             eval_tokens += sum(prompts[s.depth :]) + (rec.n + 1 - s.depth) * cfg.eval.max_new_tokens
     out["eval"] = {"episodes": episodes, "tokens_estimate": eval_tokens}
@@ -149,6 +149,14 @@ def _terminate(signum: int, frame: Any) -> None:
     raise SystemExit(128 + signum)
 
 
+def _log_safely(manifest: Manifest, path: str | Path, run_id: str, **fields: Any) -> None:
+    """Update the run's RUNLOG row; a failure there is recorded in the manifest and never changes the run's status."""
+    try:
+        runlog.update_row(path, run_id, **fields)
+    except Exception as e:  # noqa: BLE001 - recorded, not raised
+        manifest.update(runlog_error=f"{type(e).__name__}: {e}")
+
+
 def run(
     cfg: RunConfig,
     *,
@@ -181,9 +189,8 @@ def run(
     created = utc_now()
     run_id = f"{cfg.milestone}-{cfg.name}-s{cfg.seed}-{created:%Y%m%dT%H%M%SZ}"
     out = Path(results_root) / run_id
-    out.mkdir(parents=True)
     m, t = cfg.method, cfg.train
-    manifest = Manifest(out / "manifest.json", {
+    fields = {
         "run_id": run_id,
         "created_at": created.isoformat(),
         "git": git,
@@ -196,7 +203,7 @@ def run(
         "k": t.k if t else None,
         "backbone": {"id": cfg.backbone, "revision": backbone(cfg.backbone).revision, "dtype": cfg.dtype},
         "tokenizer": fmt.fingerprint(),
-        "data_manifest": None,  # written next
+        "data_manifest": None,  # written below
         "benchmark": {"name": cfg.data.env, "code": "src/qet/envs/toy.py", "commit": git["commit"],
                       "evaluator": "ToyEnv.check", "contract_source": ds.contract_source,
                       "contracts_sha256": sha256_json(ds.contracts)},
@@ -213,38 +220,46 @@ def run(
         "gpu_hours": None,
         "parent_checkpoint": None,  # the format warm-up runs inside this run (D-010, D-025d)
         "status": "running",
-    })  # fmt: skip
+    }  # fmt: skip
+    out.mkdir(parents=True)
+    manifest = Manifest(out / "manifest.json", fields)
     try:
         previous = signal.signal(signal.SIGTERM, _terminate)
     except ValueError:  # not the main thread: no handler
         previous = None
     row_added = False
     try:
-        data_path, data_sha = write_dataset(ds, out / "data", resume_starts=resume)
-        manifest.update(data_manifest={"path": _rel(data_path), "sha256": data_sha})
-        runlog.append_row(runlog_path, {
-            "run_id": run_id, "submitted": created.isoformat(), "milestone": cfg.milestone, "config": _rel(cfg.path),
-            "method": f"{m.config_id} {m.name}", "backbone": cfg.backbone, "seed": cfg.seed,
-            "commit": git["commit"][:7] + ("+dirty" if git["dirty"] else ""), "status": "running", "GPU-h": "",
-            "path": _rel(out), "note": f"limit={limit}" if limit else "",
-        })  # fmt: skip
-        row_added = True
-        tokens, outputs, seconds = _execute(cfg, ds, fmt, out, Path(checkpoints_root) / run_id, model_factory)
-        total = (time.perf_counter() - t0) / 3600 * gpus
-        git_end = git_state()
-        manifest.update(
-            tokens=tokens, gpu_hours=total, gpu_hours_by_phase={k: v / 3600 * gpus for k, v in seconds.items()},
-            status="completed", finished_at=utc_now().isoformat(), outputs=outputs, git_end=git_end,
-            code_changed_during_run=(git_end["commit"], git_end["dirty_files"]) != (git["commit"], git["dirty_files"]),
-        )  # fmt: skip
-        runlog.update_row(runlog_path, run_id, status="completed", **{"GPU-h": f"{total:.3f}"})
-    except BaseException as e:
-        total = (time.perf_counter() - t0) / 3600 * gpus
-        manifest.update(status="failed", error=f"{type(e).__name__}: {e}", finished_at=utc_now().isoformat(),
-                        gpu_hours=total)  # fmt: skip
-        if row_added:
-            runlog.update_row(runlog_path, run_id, status="failed", note=type(e).__name__, **{"GPU-h": f"{total:.3f}"})
-        raise
+        try:
+            runlog.append_row(runlog_path, {
+                "run_id": run_id, "submitted": created.isoformat(), "milestone": cfg.milestone,
+                "config": _rel(cfg.path), "method": f"{m.config_id} {m.name}", "backbone": cfg.backbone,
+                "seed": cfg.seed, "commit": git["commit"][:7] + ("+dirty" if git["dirty"] else ""),
+                "status": "running", "GPU-h": "", "path": _rel(out), "note": f"limit={limit}" if limit else "",
+            })  # fmt: skip
+            row_added = True
+            data_path, data_sha = write_dataset(ds, out / "data", resume_starts=resume)
+            manifest.update(data_manifest={"path": _rel(data_path), "sha256": data_sha})
+            tokens, outputs, seconds = _execute(cfg, ds, fmt, out, Path(checkpoints_root) / run_id, model_factory)
+            total = (time.perf_counter() - t0) / 3600 * gpus
+            phases = {k: v / 3600 * gpus for k, v in seconds.items()}
+            manifest.update(tokens=tokens, gpu_hours=total, gpu_hours_by_phase=phases, outputs=outputs,
+                            status="completed", finished_at=utc_now().isoformat())  # fmt: skip
+        except BaseException as e:
+            total = (time.perf_counter() - t0) / 3600 * gpus
+            manifest.update(status="failed", error=f"{type(e).__name__}: {e}", finished_at=utc_now().isoformat(),
+                            gpu_hours=total)  # fmt: skip
+            if row_added:
+                _log_safely(manifest, runlog_path, run_id, status="failed", note=type(e).__name__,
+                            **{"GPU-h": f"{total:.3f}"})  # fmt: skip
+            raise
+        # Bookkeeping after completion never turns a completed run into a failed one.
+        try:
+            git_end = git_state()
+            changed = (git_end["commit"], git_end["dirty_files"]) != (git["commit"], git["dirty_files"])
+        except Exception as e:  # noqa: BLE001 - recorded, not raised
+            git_end, changed = {"error": f"{type(e).__name__}: {e}"}, None
+        manifest.update(git_end=git_end, code_changed_during_run=changed)
+        _log_safely(manifest, runlog_path, run_id, status="completed", **{"GPU-h": f"{total:.3f}"})
     finally:
         if previous is not None:
             signal.signal(signal.SIGTERM, previous)
@@ -329,7 +344,10 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory) -> tuple[di
         common = {"renderer": m.renderer, "truncation": cfg.data.truncation, "run_seed": cfg.seed, "on_episode": keep}
         evaluate_tasks(ds.test_tasks, ds.make_env, policy_for, fmt, cfg.eval, **common)
         if cfg.eval.resume_prefix_tasks:
-            name, dcfg, _ = decoding_settings(cfg.eval)[0]
+            settings = decoding_settings(cfg.eval)
+            name, dcfg, _ = next(
+                (d for d in settings if d[1].mode == "greedy"), settings[0]
+            )  # greedy when there is one
             by_id = {task.task_id: task for task in ds.test_tasks}
             evaluate_resume(ds.test_records[: cfg.eval.resume_prefix_tasks], by_id, ds.make_env, policy_for(dcfg),
                             fmt, decoding=name, start_seed=cfg.eval.eval_seed, **common)  # fmt: skip
