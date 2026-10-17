@@ -18,12 +18,13 @@ from dataclasses import dataclass
 from importlib.metadata import version
 from typing import Any
 
+from qet.core.canonical import action_string
+
 LLAMA31_DATE = "26 Jul 2024"  # the date the Llama 3.1 template itself falls back to (D-022)
 
 # Special-token text of every supported backbone has this form (<|im_end|>, <|eot_id|>, <|begin_of_text|>, ...).
 # Refusing it everywhere keeps the data that is accepted the same for every backbone (D-022d).
 SPECIAL_TEXT = re.compile(r"<\|[A-Za-z0-9_]+\|>")
-ACTION_PREFIX = '{"tool":'  # every canonical action string starts so (SPEC §2, D-001)
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,17 @@ def special_text(text: str) -> str | None:
     this before Compile and at inference alike, D-022d), or None."""
     m = SPECIAL_TEXT.search(text)
     return m.group() if m else None
+
+
+def is_canonical_action(action: str) -> bool:
+    """Whether `action` is exactly the action string (SPEC §2, D-001) of the call it encodes."""
+    try:
+        obj = json.loads(action)
+        return (
+            isinstance(obj, dict) and set(obj) == {"tool", "args"} and action_string(obj["tool"], obj["args"]) == action
+        )
+    except (TypeError, ValueError):  # not JSON, NaN or infinity, non-string keys, keys colliding after NFC
+        return False
 
 
 def check_messages(messages: Sequence[Mapping[str, Any]]) -> None:
@@ -151,9 +163,9 @@ class ChatFormat:
         """tokenizer(action, no special tokens) + [end-of-turn id] (SPEC §6.7), for canonical action strings that
         decode back exactly: a string that is not NFC as a whole (an escape such as \\n before a combining mark) would
         come back composed from Qwen's normalizer, which is not the trained string (D-022c, Q16)."""
-        if not action.startswith(ACTION_PREFIX) or action != action.strip():
-            raise ValueError(f"not a canonical action string: {action[:60]!r}")
         self._check_text(action, "the action string")
+        if not is_canonical_action(action):
+            raise ValueError(f"not a canonical action string: {action[:60]!r}")
         if not unicodedata.is_normalized("NFC", action):
             raise ValueError(f"the action string is not NFC as a whole: {action[:60]!r}")
         ids = self.encode(action)

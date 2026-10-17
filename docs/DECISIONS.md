@@ -220,7 +220,9 @@ as 0.5B), Llama-3.1-8B-Instruct `0e9e39f`. Every manifest records the fingerprin
 tokenizer without the backend's transient truncation and padding settings, the sha256 of the chat template, the
 sha256 of the ids of a fixed probe prompt and two targets, and the transformers, tokenizers and jinja2 versions.
 `tests/train/golden_chat_ids.json` pins the ids of two prompts and six targets per backbone, so a library change
-that changes ids fails a test. A `ChatFormat` refuses a tokenizer of another backbone. `make fetch` downloads the
+that changes ids fails a test; rewrite it only after a deliberate change recorded here (ids on either side of the
+change make checkpoints and manifests incompatible), never to silence a failure. A `ChatFormat` refuses a tokenizer of
+another backbone (by name: load it with `ChatFormat.load`). `make fetch` downloads the
 pinned tokenizers, which the tests read, and the smoke model. (b) Llama 3.1 gets `date_string = "26 Jul 2024"`.
 D-002 assumed the template inserts today's date, but the pinned revision's template never reads the clock (no
 `strftime_now`): without `date_string` it uses this same fixed date, so the pin changes nothing for this revision.
@@ -228,14 +230,17 @@ The pin protects against a template that reads the clock: the cross-process test
 its date from the clock (as Llama 3.2's does) and shows, with faked years and different hash seeds, that the prompt
 then changes with the year when unpinned and stays fixed when pinned. (c) Decoding never cleans up tokenization
 spaces (Llama 3.1's tokenizer would turn `a , b` into `a, b` by default); decode(encode(s)) = s holds for NFC text
-(Qwen's tokenizer NFC-normalizes its input). `target_ids` checks each target: the canonical shape (`{"tool":` first,
-no surrounding whitespace), NFC as a whole, and an exact decode round trip; otherwise it raises. A canonical action
+(Qwen's tokenizer NFC-normalizes its input). `target_ids` checks each target: it must be exactly the action string
+that `action_string` writes for the call it encodes (so D-001 is defined in one place), NFC as a whole, and survive
+an exact decode round trip; otherwise it raises. A canonical action
 can fail the NFC check when JSON escaping puts an ASCII letter before a combining mark (Q16). (d) Text that matches
 `<|...|>` (the form of every special token of the supported backbones) or a special token of the loaded tokenizer is
 refused in prompts and targets, the same way on every backbone, so one dataset is accepted or refused everywhere;
 `special_text()` gives adapters the same test, to sanitize observations identically before Compile and at
-inference (recorded in their compile report). Qwen's non-special added tokens (`<tool_call>`, ...) are allowed:
-they round-trip and are tokenized the same in training and inference. Lone surrogates are refused with a clear
+inference (recorded in their compile report). A test checks that every special token of every backbone has the
+`<|...|>` form; a backbone with other special tokens (`<s>`, `[INST]`) must extend the pattern first. Of Qwen's
+non-special added tokens, `<tool_call>` and `</tool_call>` are allowed (they round-trip and are tokenized the same
+in training and inference); the others (`<|fim_prefix|>`, `<|repo_name|>`, ...) match the pattern and are refused. Lone surrogates are refused with a clear
 error (see D-020f). (e) Prompts are validated: an explicit system message first, user and assistant turns
 alternating, a user turn last. (f) Guards for inference (E1.4): pass `prompt_ids` to the model (vLLM
 `prompt_token_ids`), never `prompt_text`, whose default re-tokenization adds a second begin-of-text on Llama; decode

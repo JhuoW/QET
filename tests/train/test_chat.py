@@ -18,7 +18,15 @@ import pytest
 
 from qet.core.canonical import action_string
 from qet.core.render import SYSTEM_TEXT, render, render_messages
-from qet.train.chat import BACKBONES, LLAMA31_DATE, ChatFormat, backbone, check_messages, special_text
+from qet.train.chat import (
+    BACKBONES,
+    LLAMA31_DATE,
+    SPECIAL_TEXT,
+    ChatFormat,
+    backbone,
+    check_messages,
+    special_text,
+)
 
 MODELS = sorted(BACKBONES)
 LLAMA = "meta-llama/Llama-3.1-8B-Instruct"
@@ -151,6 +159,13 @@ def test_special_token_text_is_refused_on_every_backbone(fmt):
     assert special_text("a <| b |> <tool_call> <|not closed") is None
 
 
+def test_every_special_token_of_every_backbone_matches_the_refusal_pattern(fmt):
+    """D-022d's "the same on every backbone" holds only while every special token has the <|...|> form; a backbone
+    with other special tokens (<s>, [INST]) must extend SPECIAL_TEXT first."""
+    special = [t.content for t in fmt.tokenizer.added_tokens_decoder.values() if t.special]
+    assert special and all(SPECIAL_TEXT.fullmatch(t) for t in special)
+
+
 def test_unstable_or_non_canonical_actions_are_refused(fmt):
     """Targets must decode back to the exact canonical string (SPEC §2): leading whitespace, a non-NFC string (an
     escape such as \\n before a combining mark, which Qwen's normalizer composes into "ñ"), lone surrogates."""
@@ -158,13 +173,27 @@ def test_unstable_or_non_canonical_actions_are_refused(fmt):
         '\n{"tool":"t","args":{}}',
         '{"tool":"t","args":{}} ',
         '["tool","t"]',
-        action_string("note", {"text": "\ñ"}),  # serialized as \n + U+0303: not NFC as a whole
-        action_string("note", {"text": "\ṫ"}),
+        '{"tool": "t", "args": {}}',  # spaces
+        '{"args":{},"tool":"t"}',  # args first
+        '{"tool":"t","args":{"b":1,"a":2}}',  # unsorted keys
+        '{"tool":"t","args":{"a":1.0}}',  # 1.0 is written 1
+        '{"tool":"t","args":{"a":NaN}}',
+        action_string("note", {"text": "\n\u0303"}),  # serialized as \n + U+0303: not NFC as a whole
+        action_string("note", {"text": "\t\u0307"}),
         action_string("note", {"text": "\ud800"}),
     ]
     for a in bad:
         with pytest.raises(ValueError):
             fmt.target_ids(a)
+
+
+def test_a_target_that_does_not_survive_tokenization_is_refused(fmt, monkeypatch):
+    """The round-trip guard (NFC already implies it for the pinned tokenizers, so a stub decode exercises it)."""
+    action = action_string("ping", {})
+    assert fmt.target_ids(action)
+    monkeypatch.setattr(fmt, "decode", lambda ids: action + " ")
+    with pytest.raises(ValueError, match="does not survive tokenization"):
+        fmt.target_ids(action)
 
 
 def test_unknown_backbones_and_mismatched_tokenizers_are_refused(fmt):
@@ -190,6 +219,7 @@ def test_fingerprint(fmt):
         assert fmt.fingerprint() == fp
     finally:
         fmt.tokenizer.backend_tokenizer.no_padding()
+        fmt.tokenizer.backend_tokenizer.no_truncation()
 
 
 # ----------------------------------------------------------------------------- the date (SPEC §5.5, D-002, D-022b)
