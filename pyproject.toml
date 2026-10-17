@@ -34,6 +34,8 @@ known-first-party = ["qet"]
 testpaths = ["tests", "reference"]
 pythonpath = ["src"]
 addopts = "-ra --strict-markers"
+# torch probes CUDA on import; on the GPU-less login node that warns "CUDA unknown error" (harmless).
+filterwarnings = ["ignore:CUDA initialization:UserWarning"]
 markers = [
     "gpu: needs a CUDA GPU",
     "slow: takes more than a few seconds; excluded from make test-fast",

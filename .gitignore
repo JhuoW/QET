@@ -2,6 +2,7 @@
 /results/raw/
 /checkpoints/
 /data/
+/logs/
 .env
 
 # Python and tooling

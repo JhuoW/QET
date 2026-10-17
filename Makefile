@@ -1,8 +1,8 @@
 PYTHON ?= python3
 
-# GPU tests run only where a GPU is visible ("everything that runs on this machine").
-# (nvidia-smi -L exits 0 and prints "No devices found." on GPU-less nodes, so look for a "GPU <i>:" line.)
-HAVE_GPU := $(shell nvidia-smi -L 2>/dev/null | grep -q '^GPU [0-9]' && echo 1)
+# GPU tests run only where torch sees a GPU ("everything that runs on this machine"; CUDA_VISIBLE_DEVICES respected,
+# D-020e). Recursive (=) so that only `make test` pays for importing torch.
+HAVE_GPU = $(shell $(PYTHON) -c "import sys, torch; sys.exit(not torch.cuda.is_available())" >/dev/null 2>&1 && echo 1)
 
 .PHONY: setup lint test-fast test smoke
 
