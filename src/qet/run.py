@@ -92,6 +92,7 @@ def plan(cfg: RunConfig, *, limit: int | None = None) -> dict[str, Any]:
             "states_per_graph": {"mean": sum(states) / max(1, len(states)), "max": max(states, default=0)},
             "epochs": epochs,
             "steps": math.ceil(epochs * steps_per_epoch) + t.warmup_steps,
+            "max_minutes": t.max_minutes,  # epochs and steps above assume the budget, not this stop, ends training
         }  # fmt: skip
     episodes = eval_tokens = 0
     task_x = {t.task_id: t.public() for t in ds.test_tasks}
@@ -113,7 +114,10 @@ def plan(cfg: RunConfig, *, limit: int | None = None) -> dict[str, Any]:
     tps_train, tps_eval = cfg.estimate.get("train_tokens_per_second"), cfg.estimate.get("eval_tokens_per_second")
     hours = None
     if (tps_train or not train_tokens) and tps_eval:
-        hours = (train_tokens / tps_train if train_tokens else 0.0) / 3600 + eval_tokens / tps_eval / 3600
+        train_s = train_tokens / tps_train if train_tokens else 0.0
+        if cfg.train and cfg.train.max_minutes is not None:  # the wall-clock stop ends training after the warm-up
+            train_s = min(train_s, out["train"]["warmup_tokens_estimate"] / tps_train + 60 * cfg.train.max_minutes)
+        hours = train_s / 3600 + eval_tokens / tps_eval / 3600
     out["estimate"] = {"gpu_hours": hours, "assumed_tokens_per_second": {"train": tps_train, "eval": tps_eval},
                        "note": "throughputs are the config's assumptions until a pilot measures them"}  # fmt: skip
     return out

@@ -74,6 +74,10 @@ def test_the_dry_run_prints_the_plan_and_writes_nothing(capsys, monkeypatch):
     import os
     import pathlib
 
+    # Library import side effects are not the dry run's writes: torch makes a temporary folder when transformers'
+    # auto classes first import it, which used to fail this test when it ran before any other test imported them.
+    from transformers import AutoTokenizer  # noqa: F401
+
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
     real_open = builtins.open
     attempts = []
@@ -208,6 +212,18 @@ def test_the_dry_run_counts_the_starts_the_run_evaluates(monkeypatch):
     cfg = load_config(SMOKE)
     other = dataclasses.replace(cfg, seed=3)  # starts follow eval.eval_seed, not the training seed
     assert runner.plan(other, limit=8)["eval"] == runner.plan(cfg, limit=8)["eval"]
+
+
+def test_the_dry_run_estimate_stops_at_the_wall_clock(monkeypatch):
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    cfg = load_config(SMOKE)
+    full = runner.plan(cfg, limit=8)
+    capped = runner.plan(dataclasses.replace(cfg, train=dataclasses.replace(cfg.train, max_minutes=0.5)), limit=8)
+    tps = capped["estimate"]["assumed_tokens_per_second"]
+    expected = (capped["train"]["warmup_tokens_estimate"] / tps["train"] + 30) / 3600
+    expected += capped["eval"]["tokens_estimate"] / tps["eval"] / 3600
+    assert capped["estimate"]["gpu_hours"] == pytest.approx(expected) and expected < full["estimate"]["gpu_hours"]
+    assert capped["train"]["max_minutes"] == 0.5 and full["train"]["max_minutes"] is None
 
 
 def test_untracked_code_counts_as_dirt(tmp_path):
