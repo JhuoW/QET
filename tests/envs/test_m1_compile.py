@@ -91,3 +91,23 @@ def test_the_compile_script_writes_its_run(tmp_path):
         report = json.loads((out / split / "report.json").read_text())
         assert report["compile"]["tasks_compiled"] == 3 and report["audit"]["graphs"] == 3
     assert runlog.read_rows(log)[0]["status"] == "completed"
+
+
+def test_the_pilot_statistics_script_writes_its_run(tmp_path):
+    sys.path.insert(0, str(REPO / "scripts"))
+    import compile_m1
+    import m1_pilot_stats
+
+    from qet import runlog
+
+    log = tmp_path / "RUNLOG.md"
+    log.write_text(f"# Run log\n\n{runlog.HEADER}\n| {' | '.join('---' for _ in runlog.COLUMNS)} |\n")
+    common = ["--allow-dirty", "--out", str(tmp_path / "raw"), "--runlog", str(log)]
+    comp = compile_m1.main(["--splits", "train", "--limit", "3", *common])
+    out = m1_pilot_stats.main(["--compile-run", str(comp), "--graphs", "3", *common])
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["status"] == "completed" and manifest["finished_at"] >= manifest["created_at"]
+    assert set(manifest["files"]) == {"graphs.jsonl", "stats.json"} and manifest["graphs"] == 3
+    stats = json.loads((out / "stats.json").read_text())
+    assert stats["graphs"] == 3 and stats["invariance"]["failures"] == 0
+    assert [r["status"] for r in runlog.read_rows(log)] == ["completed", "completed"]

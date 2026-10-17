@@ -6,7 +6,8 @@ compile run (MILESTONES M1.4; EVAL_PLAN §3.1 width bins 1, 2, 3-4, 5+):
 
 Tokens per graph are the scored (pass 1) and gradient (pass 2) tokens one epoch spends on the graph under each
 configuration, counted from the real prompts and targets with the backbone's tokenizer; graphs above S_max count the
-sub-lattice of K orders (epoch 0). Writes results/raw/M1-pilot-stats-<stamp>/ (stats.json, graphs.jsonl, manifest.json).
+sub-lattice of K orders (epoch 0). Writes results/raw/M1-pilot-stats-<stamp>/ (stats.json, graphs.jsonl, manifest.json)
+and a RUNLOG row; needs a clean tree unless --allow-dirty.
 """
 
 from __future__ import annotations
@@ -25,12 +26,8 @@ def width_bin(w: int) -> str:
 
 
 def main(argv: list[str] | None = None) -> Path:
-    from qet.core.compile import incomparable_pairs, read_records, width
-    from qet.core.lattice import S_MAX, enumerate_states, node_masks
-    from qet.manifest import git_state, sha256_file, utc_now
-    from qet.train.chat import ChatFormat
-    from qet.train.methods import method
-    from qet.train.trainer import PackBuilder, pass1_edges
+    from qet import runlog
+    from qet.manifest import git_state, utc_now
 
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--compile-run", type=Path, required=True)
@@ -39,8 +36,46 @@ def main(argv: list[str] | None = None) -> Path:
     parser.add_argument("--backbone", default="Qwen/Qwen2.5-7B-Instruct")
     parser.add_argument("--orders", type=int, default=5, help="random legal orders per graph for the invariance check")
     parser.add_argument("--out", type=Path, default=REPO / "results" / "raw")
+    parser.add_argument("--runlog", type=Path, default=REPO / "docs" / "RUNLOG.md")
+    parser.add_argument("--allow-dirty", action="store_true")
     args = parser.parse_args(argv)
+    git = git_state()
+    if not args.allow_dirty and git["dirty"]:
+        raise SystemExit(f"the statistics need a clean tree (dirty: {git['dirty_files']})")
     run = args.compile_run if args.compile_run.is_absolute() else REPO / args.compile_run
+    created = utc_now()
+    out = args.out / f"M1-pilot-stats-{created:%Y%m%dT%H%M%SZ}"
+    out.mkdir(parents=True)
+    rel = lambda p: str(p.relative_to(REPO)) if p.resolve().is_relative_to(REPO) else str(p)  # noqa: E731
+    row = {"run_id": out.name, "submitted": created.isoformat(), "milestone": "M1",
+           "config": "scripts/m1_pilot_stats.py", "method": "pilot statistics", "backbone": args.backbone,
+           "seed": "-", "status": "running", "GPU-h": "0", "path": rel(out), "note": f"graphs={args.graphs}",
+           "commit": git["commit"][:7] + ("+dirty" if git["dirty"] else "")}  # fmt: skip
+    runlog.append_row(args.runlog, row)
+    status, manifest = "failed", {}
+    try:
+        manifest = _compute(args, run, out)
+        status = "completed"
+    except BaseException as e:
+        status = f"failed: {type(e).__name__}: {e}"
+        raise
+    finally:
+        record = {"run_id": out.name, "created_at": created.isoformat(), "finished_at": utc_now().isoformat(),
+                  "git": git, "script": "scripts/m1_pilot_stats.py", **manifest, "status": status}  # fmt: skip
+        (out / "manifest.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+        runlog.update_row(args.runlog, out.name, status="completed" if status == "completed" else "failed")
+    print(out)
+    return out
+
+
+def _compute(args: argparse.Namespace, run: Path, out: Path) -> dict:
+    from qet.core.compile import incomparable_pairs, read_records, width
+    from qet.core.lattice import S_MAX, enumerate_states, node_masks
+    from qet.manifest import sha256_file
+    from qet.train.chat import ChatFormat
+    from qet.train.methods import method
+    from qet.train.trainer import PackBuilder, pass1_edges
+
     compiled = json.loads((run / "manifest.json").read_text())
     records_path = run / "train" / "records.jsonl"
     if sha256_file(records_path) != compiled["splits"]["train"]["files"]["records.jsonl"]:
@@ -114,21 +149,14 @@ def main(argv: list[str] | None = None) -> Path:
         "k": args.k,
         "invariance": {"prefixes_checked": checks, "failures": failures, "orders_per_graph": args.orders},
     }
-    created = utc_now()
-    out = args.out / f"M1-pilot-stats-{created:%Y%m%dT%H%M%SZ}"
-    out.mkdir(parents=True)
     (out / "stats.json").write_text(json.dumps(stats, indent=2) + "\n", encoding="utf-8")
     with open(out / "graphs.jsonl", "w", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps(r) + "\n")
-    manifest = {"run_id": out.name, "created_at": created.isoformat(), "git": git_state(),
-                "script": "scripts/m1_pilot_stats.py", "compile_run": str(run.relative_to(REPO))
-                if run.is_relative_to(REPO) else str(run), "records_sha256": sha256_file(records_path),
-                "graphs": len(rows), "k": args.k, "tokenizer": fmt.fingerprint(),
-                "files": {p.name: sha256_file(p) for p in sorted(out.iterdir())}, "status": "completed"}  # fmt: skip
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(out)
-    return out
+    files = {p.name: sha256_file(p) for p in sorted(out.iterdir())}
+    return {"compile_run": str(run.relative_to(REPO)) if run.is_relative_to(REPO) else str(run),
+            "records_sha256": sha256_file(records_path), "graphs": len(rows), "k": args.k,
+            "tokenizer": fmt.fingerprint(), "files": files}  # fmt: skip
 
 
 if __name__ == "__main__":
