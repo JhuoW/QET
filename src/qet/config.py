@@ -19,7 +19,7 @@ from qet.train.chat import BACKBONES
 from qet.train.methods import METHODS
 
 DTYPES = ("bfloat16", "float32")
-ENVS = ("toy",)
+ENVS = ("toy", "funcbenchgen")
 
 
 def _check_keys(section: str, data: dict[str, Any], required: set[str], optional: set[str]) -> None:
@@ -47,6 +47,7 @@ class DataConfig:
     test: Split
     demo_seed: int = 0
     truncation: dict[str, Any] | None = None
+    source: dict[str, str] | None = None  # funcbenchgen: {compile_run, train, eval}; train/test then slice those splits
 
 
 @dataclass(frozen=True)
@@ -118,7 +119,7 @@ def load_config(path: str | Path) -> RunConfig:
             raise ValueError(f"{key} may contain only letters, digits, '.', '_' and '-'")
 
     d = data["data"]
-    _check_keys("data", d, {"env", "kind", "train", "test"}, {"params", "demo_seed", "truncation"})
+    _check_keys("data", d, {"env", "kind", "train", "test"}, {"params", "demo_seed", "truncation", "source"})
     if d["env"] not in ENVS:
         raise ValueError(f"unknown env {d['env']!r}; expected one of {ENVS}")
     splits = {}
@@ -126,10 +127,17 @@ def load_config(path: str | Path) -> RunConfig:
         _check_keys(f"data.{name}", d[name], {"start", "count"}, set())
         splits[name] = Split(int(d[name]["start"]), int(d[name]["count"]))
     a, b = splits["train"], splits["test"]
-    if a.start < b.start + b.count and b.start < a.start + a.count:
+    source = d.get("source")
+    if d["env"] == "funcbenchgen":  # slices of two different manifests, disjoint by construction (D-028)
+        _check_keys("data.source", source or {}, {"compile_run", "train", "eval"}, set())
+        if source["eval"] == source["train"] or source["eval"].startswith("train"):
+            raise ValueError("a run never evaluates on its training split")
+    elif source is not None:
+        raise ValueError("data.source is for funcbenchgen runs")
+    elif a.start < b.start + b.count and b.start < a.start + a.count:
         raise ValueError("training and test seeds overlap")  # EVAL_PLAN §3.1: training seeds disjoint from test
     data_cfg = DataConfig(d["env"], d["kind"], dict(d.get("params") or {}), a, b, int(d.get("demo_seed", 0)),
-                          d.get("truncation"))  # fmt: skip
+                          d.get("truncation"), dict(source) if source else None)  # fmt: skip
 
     train = None
     if data.get("train") is not None:

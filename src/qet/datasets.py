@@ -6,6 +6,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import random
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +28,7 @@ class Dataset:
     contract_source: str
     make_env: Callable[[ToyTask], Environment]
     spec: dict[str, Any]  # what generated the data
+    benchmark: dict[str, Any] = dataclasses.field(default_factory=dict)  # the manifest's benchmark / evaluator fields
 
 
 def _merged_contracts(tasks: list[ToyTask]) -> dict[str, Any]:
@@ -40,7 +42,10 @@ def _merged_contracts(tasks: list[ToyTask]) -> dict[str, Any]:
 
 
 def build_dataset(cfg: DataConfig, *, limit: int | None = None) -> Dataset:
-    """The toy env's tasks from disjoint seed ranges; demonstrations are seeded random topological orders (D-007)."""
+    """The toy env's tasks from disjoint seed ranges; demonstrations are seeded random topological orders (D-007).
+    FuncBenchGen runs read the records of an M1.3 compile run instead (see `funcbenchgen_dataset`)."""
+    if cfg.env == "funcbenchgen":
+        return funcbenchgen_dataset(cfg, limit=limit)
     if cfg.env != "toy":
         raise ValueError(f"unknown env {cfg.env!r}")
     n_train = cfg.train.count if limit is None else min(limit, cfg.train.count)
@@ -59,8 +64,17 @@ def build_dataset(cfg: DataConfig, *, limit: int | None = None) -> Dataset:
             "train": {"start": cfg.train.start, "count": n_train}, "test": {"start": cfg.test.start, "count": n_test},
             "truncation": cfg.truncation}  # fmt: skip
     env0 = ToyEnv(train[0] if train else test[0])
+    benchmark = {"name": "toy", "code": "src/qet/envs/toy.py", "evaluator": "ToyEnv.check",
+                 "step_budget": "twice the minimum number of calls"}  # fmt: skip
     return Dataset(
-        train_records, test, test_records, _merged_contracts(train + test), env0.contract_source, ToyEnv, spec
+        train_records,
+        test,
+        test_records,
+        _merged_contracts(train + test),
+        env0.contract_source,
+        ToyEnv,
+        spec,
+        benchmark,
     )
 
 
@@ -188,3 +202,44 @@ def audit_summary(compiled: list[CompiledTask]) -> dict[str, Any]:
         "replay_fallbacks": sum(c.mismatches > 0 for c in compiled),
         "replay_orders_per_graph": compiled[0].replayed if compiled else None,
     }
+
+
+def funcbenchgen_dataset(cfg: DataConfig, *, limit: int | None = None) -> Dataset:
+    """Training records from an M1.3 compile run (checked against the hashes in its manifest) and evaluation tasks
+    rebuilt from the manifest that run compiled; `train` and `test` slice the two splits."""
+    from qet.core.compile import read_records
+    from qet.envs.funcbenchgen import FuncBenchGenEnv
+    from qet.manifest import REPO, sha256_file
+
+    src = cfg.source or {}
+    run = REPO / src["compile_run"]
+    compiled = json.loads((run / "manifest.json").read_text())
+    if compiled.get("status") != "completed":
+        raise ValueError(f"compile run {run} did not complete")
+    for split in (src["train"], src["eval"]):
+        for name, digest in compiled["splits"][split]["files"].items():
+            if sha256_file(run / split / name) != digest:
+                raise ValueError(f"{run / split / name} does not match its compile manifest")
+    n_train = cfg.train.count if limit is None else min(limit, cfg.train.count)
+    n_test = cfg.test.count if limit is None else min(limit, cfg.test.count)
+    train = read_records(run / src["train"] / "records.jsonl")[cfg.train.start : cfg.train.start + n_train]
+    test_records = read_records(run / src["eval"] / "records.jsonl")[cfg.test.start : cfg.test.start + n_test]
+    manifest = json.loads((REPO / compiled["splits"][src["eval"]]["manifest"]).read_text())
+    entries = manifest["tasks"][cfg.test.start : cfg.test.start + n_test]
+    tasks = m1_tasks({**manifest, "tasks": entries})
+    if [t.task_id for t in tasks] != [r.task_id for r in test_records]:
+        raise ValueError("evaluation tasks and records do not line up")
+    if len(train) != n_train or len(tasks) != n_test:
+        raise ValueError("the compile run has fewer records than the config asks for")
+    tools = {t["name"] for r in train for t in r.tools} | {t["name"] for task in tasks for t in task.tools}
+    contracts = {name: {"reads": [], "writes": []} for name in sorted(tools - {"finish"})}  # pure (SPEC §3)
+    spec = {"env": "funcbenchgen", "compile_run": src["compile_run"], "train": {"split": src["train"],
+            "start": cfg.train.start, "count": n_train}, "eval": {"split": src["eval"], "start": cfg.test.start,
+            "count": n_test}, "truncation": cfg.truncation}  # fmt: skip
+    commit = subprocess.run(["git", "-C", str(REPO / "third_party" / "FuncBenchGen"), "rev-parse", "HEAD"],
+                            capture_output=True, text=True, check=True).stdout.strip()  # fmt: skip
+    benchmark = {"name": "funcbenchgen", "code": "src/qet/envs/funcbenchgen.py", "commit": commit,
+                 "evaluator": "FuncBenchGenEnv.check (the repository's rule)",
+                 "step_budget": "twice the minimum number of calls (the repository's cap)"}  # fmt: skip
+    return Dataset(train, tasks, test_records, contracts, FuncBenchGenEnv.contract_source, FuncBenchGenEnv, spec,
+                   benchmark)  # fmt: skip
