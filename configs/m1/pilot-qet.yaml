@@ -1,0 +1,38 @@
+# M1.4 throughput pilot: configuration 6 (QET) on Qwen2.5-7B-Instruct, FuncBenchGen training graphs from the M1.3
+# compile run. A short run within D-021's per-job cap (1 GPU, at most 1 h): it measures training and decoding
+# throughput for the Gate A projection; no claims are drawn from it.
+milestone: M1
+name: pilot-qet
+configuration: "6"
+seed: 0
+backbone: Qwen/Qwen2.5-7B-Instruct
+dtype: bfloat16
+data:
+  env: funcbenchgen
+  kind: grid
+  source: {compile_run: results/raw/M1-compile-20261017T161839Z, train: train, eval: dev}
+  train: {start: 0, count: 500}
+  test: {start: 0, count: 6}
+train:
+  token_budget: 1000000000  # not reached: the wall-clock stop ends the pilot
+  max_minutes: 20
+  warmup_steps: 5
+  lora_rank: 64
+  lora_alpha: 128
+  batch_graphs: 4
+  lr: 1.0e-4
+  warmup: 0.03
+  max_grad_norm: 1.0
+  k: 4
+  s_max: 256
+  max_tokens: 16384
+  max_target_tokens: 8192
+  checkpoint_fractions: []
+eval:
+  decoding:
+    - {mode: greedy}
+  max_new_tokens: 64
+  resume_prefix_tasks: 0
+estimate:  # assumptions for the dry run, replaced by the pilot's measurement
+  train_tokens_per_second: 10000
+  eval_tokens_per_second: 500
