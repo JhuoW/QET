@@ -30,6 +30,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-022 | Proposed | Chat details left open by SPEC §6.7 and D-002 |
 | D-023 | Proposed | Trainer details left open by SPEC §6.5, §8 and D-009 |
 | D-024 | Proposed | Scorer details left open by SPEC §6.7 |
+| D-025 | Proposed | Runner details and what the smoke audit asks of M1 |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -298,6 +299,22 @@ vocabulary-sized float32 logits. (e) Deferred to the M1.4 pilot: gradient checkp
 decoder layers in `torch.utils.checkpoint` itself; recomputation is exact without dropout), and the bf16 invariance
 test on each backbone that will be trained (Qwen2.5-7B-Instruct, Llama-3.1-8B-Instruct). Default: as described;
 cheap to reverse.
+
+### D-025 Runner details and what the smoke audit asks of M1
+`src/qet/run.py`, `manifest.py`, `runlog.py`, `scripts/make_tables.py` (E1.6, E1.7; results-auditor notes on the
+smoke table). (a) The clean-tree check ignores `docs/RUNLOG.md`, which every run rewrites, so that the second run of a
+job can start after the first has added its row; every other tracked change makes a run refuse to start, and the
+manifest lists dirty files. (b) Jobs run in the live working tree, so a commit made while a job runs moves HEAD: the
+smoke job's QET run recorded c6f32b6 and HEAD moved to 36ac50d (tests only) 51 s later. From M1 on, jobs run from a
+pinned checkout (`git worktree add <dir> <commit>`) so the code a run uses is exactly its recorded commit. (c) GPU
+training is not bit-reproducible (the two smoke runs' identical warm-ups diverged from step 3); numbers are
+re-derived from `results/raw/`, never by re-running. (d) In E1 each run did its own format warm-up; D-010 asks
+configurations 2-6 to share one warm-up checkpoint per backbone and seed. Before M1.6 the warm-up becomes its own run
+whose checkpoint the configuration runs name as `parent_checkpoint` (its tokens counted through
+`tokens_at_start`). (e) Before M1 tables are reported, `make_tables.py` gives error rates per decoding setting, per
+call and per task (EVAL_PLAN §7) instead of pooling greedy with sampled episodes, states the episode and task counts of
+the Resume@prefix columns, and reports each run's budget overshoot (D-023f; 0.12% and 0.59% in the smoke runs).
+Default: as described; (b), (d) and (e) to be implemented before the M1 runs.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.

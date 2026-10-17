@@ -6,3 +6,5 @@ may add a note (for example why a run was cancelled) but never type results here
 
 | run_id | submitted | milestone | config | method | backbone | seed | commit | status | GPU-h | path | note |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| E1-smoke-sft-s0-20261017T074443Z | 2026-10-17T07:44:43+00:00 | E1 | configs/smoke/sft.yaml | 2 demo_order_sft | Qwen/Qwen2.5-0.5B-Instruct | 0 | c6f32b6 | completed | 0.156 | results/raw/E1-smoke-sft-s0-20261017T074443Z |  |
+| E1-smoke-qet-s0-20261017T075405Z | 2026-10-17T07:54:05+00:00 | E1 | configs/smoke/qet.yaml | 6 qet | Qwen/Qwen2.5-0.5B-Instruct | 0 | c6f32b6 | completed | 0.141 | results/raw/E1-smoke-qet-s0-20261017T075405Z |  |

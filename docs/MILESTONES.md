@@ -105,13 +105,23 @@ Goal: the end-to-end pipeline works and is provably consistent before any expens
   generation order; Compile edge recall 1.0, direct and by reachability, unsafe-order rate 0, no underived values;
   precision 1.0 on function tasks and < 1 on stateful ones, where payments truly commute; replay audit 0
   mismatches); `make lint` → exit 0; commit 130699a
-- [ ] **E1.6 Runner, manifests, run log** (`run.py`, `manifest.py`, `runlog.py`, `configs/` schema). Accept:
+- [x] **E1.6 Runner, manifests, run log** (`run.py`, `manifest.py`, `runlog.py`, `configs/` schema). Accept:
   `python -m qet.run --config configs/smoke/qet.yaml --dry-run` prints the plan, token and GPU-hour estimates
   and writes nothing; a real run writes `results/raw/<run_id>/` with a manifest containing every field of
   EVAL_PLAN §10 and appends a RUNLOG row.
-- [ ] **E1.7 Smoke** (`make smoke`, < 30 min on 1 GPU): Qwen2.5-0.5B-Instruct, configurations 2 and 6, toy env,
+  evidence: `python -m qet.run --config configs/smoke/qet.yaml --dry-run` → plan, tokens per epoch, steps and an
+  estimated 0.120 GPU-hours (assumed throughput), results/raw/ and docs/RUNLOG.md unchanged; `pytest tests/eval -q`
+  → 12 passed (dry run writes nothing; a tiny-model run writes every §10 field, data manifest, predictions, metrics,
+  checkpoints and a RUNLOG row; failed runs recorded; dirty trees refused); real runs: PBS job 87796.gaas wrote
+  results/raw/E1-smoke-sft-s0-20261017T074443Z/ and E1-smoke-qet-s0-20261017T075405Z/, whose manifests have every
+  EVAL_PLAN §10 field and match their RUNLOG rows (results-auditor); commit 3241e93
+- [x] **E1.7 Smoke** (`make smoke`, < 30 min on 1 GPU): Qwen2.5-0.5B-Instruct, configurations 2 and 6, toy env,
   short training, evaluation with Resume@prefix, a table from `scripts/make_tables.py`. Accept: runs end to end;
   results-auditor confirms every number in the smoke table. No claims are drawn from smoke numbers.
+  evidence: `make smoke` in PBS job 87796.gaas (H200, commit c6f32b6, clean tree) → exit 0, 17 min 54 s walltime;
+  configurations 2 and 6 each trained (format warm-up, then a 4M-token budget) and evaluated (greedy, 8 samples,
+  Resume@prefix); table results/tables/smoke-20261017T075405Z.md from scripts/make_tables.py; results-auditor:
+  every number traced to results/raw/, no mismatches, no blocking issues (notes in D-025); no claims drawn
 
 ## M1 — FuncBenchGen + ToolHop (EVAL_PLAN §3.1–3.2)
 - [ ] **M1.1 Adapter**: FuncBenchGen pinned in `third_party/`; task → x; step; success check; call cap; error
