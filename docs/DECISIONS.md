@@ -32,6 +32,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-024 | Proposed | Scorer details left open by SPEC §6.7 |
 | D-025 | Proposed | Runner details and what the smoke audit asks of M1 |
 | D-026 | Proposed | Inference and evaluation details (end-of-E1 review) |
+| D-027 | Proposed | FuncBenchGen adapter details |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -213,7 +214,10 @@ and the M1.5-M1.7 run matrix. The agent asks once, with the pilot's measured pro
 calls: there is no budget, and `OPENAI_API_KEY` is not set; (d) the human's Hugging Face account already has access
 to `meta-llama/Llama-3.1-8B-Instruct` and `meta-llama/Llama-2-7b-hf` (checked 2026-10-17 with metadata requests
 only), so downloading them accepts no new license. The AppWorld data terms and the ToolBench / DTA-Tool terms
-remain the human's (M2). Default: as described.
+remain the human's (M2). Default: as described. Update 2026-10-17: asked to approve adding FuncBenchGen under
+third_party/ and to set a GPU budget for the M1.4 pilot and later runs, the human replied "Approve."; read as approving
+the submodule and the plan to do M1.1-M1.4 with the M1.4 throughput pilot inside the per-job cap (1 GPU, at most 1
+h); the run matrix still waits for a budget at Gate A.
 
 ### D-022 Chat details left open by SPEC §6.7 and D-002
 `src/qet/train/chat.py`. (a) Each backbone is pinned to one Hugging Face commit, which fixes weights, tokenizer and
@@ -347,6 +351,27 @@ manifest (`resume_starts.json`). (e) Error taxonomy: episodes end in success, wr
 exhausted or render error; errors are counted per call and per episode by the environment's own reason when it logs
 one (FuncBenchGen: value not yet known, incorrect value), else by the step's observation-error flag. Default: as
 described; cheap to reverse.
+
+### D-027 FuncBenchGen adapter details
+`src/qet/envs/funcbenchgen.py`; the repository is the git submodule `third_party/FuncBenchGen` at `0729e25`
+(2026-02-10, BSD-3), never modified. (a) A task is one graph of one grid cell and one trial, built with the
+repository's own functions: `_build_graph_for_seed` for the graph seed, `reformat_tree_with_shared_types` (use_types,
+the repository's default), `derive_trial_seed` and `_initialize_trial_variables` for the values, `_get_input_prompt`
+for the request and `_get_function_schemas` for the tools, plus finish(answer). Where the repository's `run` lets an
+unseeded RNG pick seeds (the tree's renaming, the evaluator), the adapter passes seeds derived from (cell, graph seed),
+so a task is a function of (cell, graph seed, trial); all of it runs on its own copy of the Python and NumPy global RNG
+states, leaving everyone else's untouched. (b) `step` is the repository's `_execute_tool` with on_wrong_inputs =
+"Execute", error_detail_level = "None" and no restated values (configuration 1's renderer restates values instead):
+an input whose type is not yet known, or a wrong value, returns a random value from the repository's RNG, seeded the
+same way at the start of every episode. "Variable x = 123." becomes {"x": 123} and "Error occurred." becomes
+{"error": "Error occurred."}; the repository's failure reason goes to the episode's error log. (c) Success is the
+repository's rule: the finish answer equals the target value and at least the minimum number of calls was made; calls
+are capped at twice the minimum. The agent makes one call per step, where the repository's loop executes every call
+of a message. (d) Contracts: every function is pure (SPEC §3); the repository's "known types" gate follows the data
+dependencies, which Compile recovers from values, and a hidden value equal to a stated input defeats that and fails
+the replay audit (seen on 1 graph of 30 in a 5-function cell), so M1.3 runs the audit and falls back to a chain. (e)
+`funcbenchgen.py` imports LiteLLM at module level for API calls the adapter never makes, so a stub module stands in
+for it. Default: as described; cheap to reverse.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
