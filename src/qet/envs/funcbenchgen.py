@@ -16,9 +16,14 @@ was made; calls are capped at twice the minimum. Functions are pure (SPEC §3: c
 from __future__ import annotations
 
 import copy
+import dataclasses
+import hashlib
 import json
+import os
 import random
 import re
+import string
+import subprocess
 import sys
 import types
 from collections.abc import Mapping
@@ -141,14 +146,64 @@ class FuncTask:
 FINISH = {"name": "finish", "params": ["answer"], "description": "Submit the final answer"}
 
 
-def build_task(cfg: GridConfig, graph_seed: int, trial: int = 0, task_id: str | None = None) -> FuncTask:
-    """One graph and trial, built as the repository builds them, under seeds derived from (config, graph, trial)."""
+_GRAPHS: dict[tuple[str, int], dict[str, Any]] = {}
+
+
+def _build_graph(cfg: GridConfig, graph_seed: int) -> dict[str, Any]:
+    fbg, *_ = _repo()
+    with _global_rng(_seeded_state(graph_seed, graph_seed + 7)):
+        return fbg._build_graph_for_seed(cfg.experiment_config(), graph_seed)  # seeds the global RNG itself
+
+
+def graph_payloads(items: list[tuple[GridConfig, int]]) -> list[dict[str, Any]]:
+    """The repository's graph for each (cell, graph seed). Its generator turns sets of names into lists before drawing
+    from them, so its graphs depend on Python's string hashing: they are built with PYTHONHASHSEED=0, in a helper
+    process when this one runs under another seed, and cached (the repository's own runner caches graphs on disk)."""
+    missing = list(dict.fromkeys((c, s) for c, s in items if (c.tag(), s) not in _GRAPHS))
+    if missing and os.environ.get("PYTHONHASHSEED") == "0":
+        for c, s in missing:
+            _GRAPHS[(c.tag(), s)] = _build_graph(c, s)
+    elif missing:
+        request = json.dumps([[dataclasses.asdict(c), s] for c, s in missing])
+        done = subprocess.run([sys.executable, "-m", "qet.envs.funcbenchgen"], input=request, capture_output=True,
+                              text=True, check=True, env={**os.environ, "PYTHONHASHSEED": "0"})  # fmt: skip
+        for (c, s), graph in zip(missing, json.loads(done.stdout), strict=True):
+            _GRAPHS[(c.tag(), s)] = graph
+    return [copy.deepcopy(_GRAPHS[(c.tag(), s)]) for c, s in items]
+
+
+def _rename_functions(payload: dict[str, Any], seed: int) -> dict[str, Any]:
+    """The same graph with new function (tool) names, drawn like the repository's: func_ plus three letters."""
+    payload = copy.deepcopy(payload)
+    rng = random.Random(seed)
+    old = [nd["id"] for nd in payload["graph_data"]["nodes"]]
+    new: dict[str, str] = {}
+    while len(new) < len(old):
+        name = "func_" + "".join(rng.choices(string.ascii_lowercase, k=3))
+        if name not in new.values() and name not in old:
+            new[old[len(new)]] = name
+    for nd in payload["graph_data"]["nodes"]:
+        nd["id"] = nd["function"]["name"] = new[nd["id"]]
+    for link in payload["graph_data"]["links"]:
+        link["source"], link["target"] = new[link["source"]], new[link["target"]]
+    payload["target_node"] = new[payload["target_node"]]
+    return payload
+
+
+def build_task(
+    cfg: GridConfig, graph_seed: int, trial: int = 0, task_id: str | None = None, renamed: bool = False
+) -> FuncTask:
+    """One graph and trial, built as the repository builds them, under seeds derived from (config, graph, trial).
+    `renamed`: the same graph with new tool names, variable names, types and values (the held-out renamed set)."""
     fbg, ft, ev, utils = _repo()
     tag = cfg.tag()
+    salt = "renamed" if renamed else ""
     state = _seeded_state(graph_seed, graph_seed + 7)
     with _global_rng(state):
-        payload = fbg._build_graph_for_seed(cfg.experiment_config(), graph_seed)  # seeds the global RNG itself
-        tree = ft.FunctionDependencyTree(seed=utils.stable_int_from(tag, str(graph_seed), "types"))
+        (payload,) = graph_payloads([(cfg, graph_seed)])
+        if renamed:
+            payload = _rename_functions(payload, utils.stable_int_from(tag, str(graph_seed), "rename"))
+        tree = ft.FunctionDependencyTree(seed=utils.stable_int_from(tag, str(graph_seed), "types" + salt))
         tree.graph = utils.graph_from_node_link_data(copy.deepcopy(payload["graph_data"]))
         if cfg.use_types:
             tree.reformat_tree_with_shared_types(
@@ -157,11 +212,11 @@ def build_task(cfg: GridConfig, graph_seed: int, trial: int = 0, task_id: str | 
                 num_supertypes=cfg.num_supertypes,
             )  # fmt: skip
         evaluator = ev.ToolCallingEvaluator(
-            tree, seed=utils.stable_int_from(tag, str(graph_seed), "evaluator"), num_noise_inputs=0,
+            tree, seed=utils.stable_int_from(tag, str(graph_seed), "evaluator" + salt), num_noise_inputs=0,
             function_shuffle_seed=cfg.function_shuffle_seed, error_detail_level="None", on_wrong_inputs="Execute",
             repeat_known_variable_values=False,
         )  # fmt: skip
-        trial_seed = fbg.derive_trial_seed(tag, graph_seed, trial)
+        trial_seed = fbg.derive_trial_seed(tag, graph_seed, trial, rng_salt=1 if renamed else 0)  # new values
         utils.set_global_rng(trial_seed, trial_seed + 11)
         input_vars, known, var_to_type, _ = fbg._initialize_trial_variables(evaluator, tree, cfg.use_types)
         target_node = payload["target_node"]
@@ -178,7 +233,7 @@ def build_task(cfg: GridConfig, graph_seed: int, trial: int = 0, task_id: str | 
     tools = [{"name": s["function"]["name"], "params": list(s["function"]["parameters"]["required"]),
               "description": s["function"]["description"]} for s in schemas]  # fmt: skip
     task = FuncTask(
-        task_id=task_id or f"fbg-{tag}-g{graph_seed}-t{trial}",
+        task_id=task_id or f"fbg-{tag}-g{graph_seed}-t{trial}" + ("-renamed" if renamed else ""),
         config=cfg,
         graph_seed=graph_seed,
         trial=trial,
@@ -262,3 +317,46 @@ class FuncBenchGenEnv:
 
     def final_state(self) -> JSON:
         return {}  # pure functions: no state to compare beyond the observations
+
+
+# ----------------------------------------------------------------------------- the grid (EVAL_PLAN §3.1, M1.2)
+FORMS = ("connected", "disconnected", "mixed")  # where the irrelevant functions hang
+
+
+def cell_config(core: int, depth: int, irrelevant: int, form: str) -> GridConfig:
+    """Core functions, depth (critical path), and irrelevant functions: connected ones consume task variables,
+    disconnected ones form their own subgraph, mixed is half of each."""
+    if irrelevant == 0:
+        disconnected = 0
+    elif form in FORMS:
+        disconnected = {"connected": 0, "disconnected": irrelevant, "mixed": irrelevant // 2}[form]
+    else:
+        raise ValueError(f"unknown form {form!r}; expected one of {FORMS}")
+    return GridConfig(core_nodes=core, max_critical_path=depth, num_total_nodes=core + irrelevant,
+                      num_disconnected_nodes=disconnected)  # fmt: skip
+
+
+def grid_cells(core: list[int], depth: str | list[int], irrelevant: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The cells in a fixed order: core, then depth (1 .. core - 1 for "all"), then irrelevant setting."""
+    cells = []
+    for n in core:
+        depths = range(1, n) if depth == "all" else [d for d in depth if 1 <= d < n]
+        for d in depths:
+            for irr in irrelevant:
+                k = int(irr["count"])
+                form = irr.get("form", "connected") if k else "none"
+                cells.append({"core": n, "depth": d, "irrelevant": k, "form": form})
+    return cells
+
+
+def task_digest(task: FuncTask) -> str:
+    """What a manifest pins about a task: its public text, its gold calls and its answer."""
+    content = {"request": task.request, "tools": list(task.tools), "calls": list(task.calls), "answer": task.answer,
+               "min_calls": task.min_calls, "true_preds": [list(p) for p in task.true_preds]}  # fmt: skip
+    return hashlib.sha256(json.dumps(content, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+if __name__ == "__main__":  # the helper process of graph_payloads: [[cell, graph seed], ...] on stdin
+    if os.environ.get("PYTHONHASHSEED") != "0":
+        raise SystemExit("the graph helper must run with PYTHONHASHSEED=0")
+    print(json.dumps([_build_graph(GridConfig(**c), s) for c, s in json.loads(sys.stdin.read())]))

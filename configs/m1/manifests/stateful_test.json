@@ -1,0 +1,971 @@
+{
+ "split": "stateful_test",
+ "spec": "configs/m1/funcbenchgen.yaml",
+ "spec_sha256": "9ecc71346472dd8c6a42dea7103e8140f16c42a4837d21101e6c419480b0d7e5",
+ "funcbenchgen_commit": "0729e2567dfaee1e53262ba9bfd5ba6a4b4e4343",
+ "source": "qet.envs.toy.stateful_task",
+ "count": 120,
+ "provisional": false,
+ "tasks": [
+  {
+   "task_id": "toy-st-1000000-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000000,
+   "calls": 7,
+   "sha256": "934dd0c5a3d77404a191dc4518c9f22d0a842aadf98322e04c23e19e02480c0f"
+  },
+  {
+   "task_id": "toy-st-1000001-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000001,
+   "calls": 7,
+   "sha256": "87105440b29d1fcc5cdf28da4a208762eaa82d8ea024187ffc8f150d863f7128"
+  },
+  {
+   "task_id": "toy-st-1000002-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000002,
+   "calls": 7,
+   "sha256": "894da9dfd713dfd2213df22f9752a0b9ec73e08f2bcce3ce6fd0b5b32fee2567"
+  },
+  {
+   "task_id": "toy-st-1000003-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000003,
+   "calls": 7,
+   "sha256": "997fb4813cc49141a7fbec18de617677f5af819dd0e02d613f81928a5bf980f3"
+  },
+  {
+   "task_id": "toy-st-1000004-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000004,
+   "calls": 7,
+   "sha256": "e67f20579bb04bb86c13465dbce35d1b623dc0d8cc06f00bb14859857d67233c"
+  },
+  {
+   "task_id": "toy-st-1000005-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000005,
+   "calls": 7,
+   "sha256": "a24ada35a7060899e6fb7419e4acacdacd184d8dbc240ae3bbbd2673eb366a17"
+  },
+  {
+   "task_id": "toy-st-1000006-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000006,
+   "calls": 7,
+   "sha256": "082004dd66201c159736dd24043ed41fc60c71d677fa38e4a29826c963efb390"
+  },
+  {
+   "task_id": "toy-st-1000007-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000007,
+   "calls": 7,
+   "sha256": "d28f35e08a56bfaf42b841d8d736235976d7c5b7932b358cb01d7c0ec7b81cbc"
+  },
+  {
+   "task_id": "toy-st-1000008-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000008,
+   "calls": 7,
+   "sha256": "d785c2a17476a198efc005ae0028af4de81dadb59a939a4b94c41577a804cffd"
+  },
+  {
+   "task_id": "toy-st-1000009-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000009,
+   "calls": 7,
+   "sha256": "4f768fa0112cd34b8401c8d40dcb079f401b0aeffed777c1ef71efbbe78fe94b"
+  },
+  {
+   "task_id": "toy-st-1000010-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000010,
+   "calls": 7,
+   "sha256": "7fa62a8f06b4adf5c9397b765da055e7fb6c8ec622030736d08e2d1aa968fc5b"
+  },
+  {
+   "task_id": "toy-st-1000011-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000011,
+   "calls": 7,
+   "sha256": "2a773eefbbf7d5d6462ce2a6f920549c50f538958573086ef0f1d5164e3cb726"
+  },
+  {
+   "task_id": "toy-st-1000012-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000012,
+   "calls": 7,
+   "sha256": "82827954cc6f2240990165a8220121bacbbb5a0fcef7c9d58fc8187e4ceb4b46"
+  },
+  {
+   "task_id": "toy-st-1000013-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000013,
+   "calls": 7,
+   "sha256": "321c70548904df5e7f29154bc1354030eba893f1cab1ed079eb1e67bf75cd59b"
+  },
+  {
+   "task_id": "toy-st-1000014-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000014,
+   "calls": 7,
+   "sha256": "5921b6b64dfb70f41280a7d63ef6d2b73112fbf91f88c77f772537e2feadef53"
+  },
+  {
+   "task_id": "toy-st-1000015-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000015,
+   "calls": 7,
+   "sha256": "d9ed4464f0cf16ebc1643a7f475028dbd6f6c4ede21a8f16870d795bed31462c"
+  },
+  {
+   "task_id": "toy-st-1000016-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000016,
+   "calls": 7,
+   "sha256": "d704c98b1e02139682876add37f409475c1ac786867b60ad75ad88fcec6fddbb"
+  },
+  {
+   "task_id": "toy-st-1000017-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000017,
+   "calls": 7,
+   "sha256": "8b2c59b6a22024031a629c77050cdefdcb15bf83d42a6d720c7b0e0170e8710c"
+  },
+  {
+   "task_id": "toy-st-1000018-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000018,
+   "calls": 7,
+   "sha256": "ba3a0ad258254a41b413f6f05f9b99e3cae4b3184ba80451fa8113aa6966326c"
+  },
+  {
+   "task_id": "toy-st-1000019-o3a1",
+   "n_orders": 3,
+   "n_accounts": 1,
+   "seed": 1000019,
+   "calls": 7,
+   "sha256": "850ca70a40830fbd147c7407457a7612513a4ee97f29a01648fe5100a93e00c4"
+  },
+  {
+   "task_id": "toy-st-1010000-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010000,
+   "calls": 7,
+   "sha256": "a2045f77d452f60f3641704001114a40a7ae2f973c313370298b91f55b6a2252"
+  },
+  {
+   "task_id": "toy-st-1010001-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010001,
+   "calls": 7,
+   "sha256": "84832174fd59ae32198165af19c35d461684ec752523880af65b430c9f25f51c"
+  },
+  {
+   "task_id": "toy-st-1010002-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010002,
+   "calls": 7,
+   "sha256": "fb0551a9b91f1abbe0c839c8e7d46eec11dfa1f83fcf4be4746f2901bda8883c"
+  },
+  {
+   "task_id": "toy-st-1010003-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010003,
+   "calls": 7,
+   "sha256": "8f99928e74f18f16ea8da61e5621a49e5ebeb31f991493f9403d5651984b80ef"
+  },
+  {
+   "task_id": "toy-st-1010004-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010004,
+   "calls": 7,
+   "sha256": "8d1a5bce274cca3137f51990615143c230328c884c87dbef2714d7d3cf56f190"
+  },
+  {
+   "task_id": "toy-st-1010005-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010005,
+   "calls": 7,
+   "sha256": "2a26f07456fa46acfb8d3b323a916fedc353eba55a471579c096860441e4ee46"
+  },
+  {
+   "task_id": "toy-st-1010006-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010006,
+   "calls": 7,
+   "sha256": "b8addda49bfe1eba51e5dc2951a23deace4c8284fcace26f159c54fd9193ede8"
+  },
+  {
+   "task_id": "toy-st-1010007-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010007,
+   "calls": 7,
+   "sha256": "f0312bf8c451b7e1580826583dc28e87f09f5cde07a4319b4223b048e3ec8ff6"
+  },
+  {
+   "task_id": "toy-st-1010008-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010008,
+   "calls": 7,
+   "sha256": "8f89040b912d7e9546cdce00ec1be43e864bf64be522b7405b6188eacb50e718"
+  },
+  {
+   "task_id": "toy-st-1010009-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010009,
+   "calls": 7,
+   "sha256": "8155390f91f8fd1934979d3c4b00bc1a3b7a1149efa57ac4a57ee46135c774bb"
+  },
+  {
+   "task_id": "toy-st-1010010-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010010,
+   "calls": 7,
+   "sha256": "cea83eed753fee4bc96f03d2162eb0095aac9bfe92c3cb14a127186c61ebe42f"
+  },
+  {
+   "task_id": "toy-st-1010011-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010011,
+   "calls": 7,
+   "sha256": "88b04d94930e594f5abecd83cae48c69d4e6b01fd09860f894380b4da85876a6"
+  },
+  {
+   "task_id": "toy-st-1010012-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010012,
+   "calls": 7,
+   "sha256": "0ec2ab24b08a9e671cbfa0c8e0fb45fa22f5f6666cc7bc5742cdf2d1818f9d32"
+  },
+  {
+   "task_id": "toy-st-1010013-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010013,
+   "calls": 7,
+   "sha256": "d6ad62bec67fd653f906aa468ba47ea7ea36fc3bcf934da0437ea8eacb6d5c13"
+  },
+  {
+   "task_id": "toy-st-1010014-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010014,
+   "calls": 7,
+   "sha256": "f81f53673620df729a235c6429b50a9a2ec504aff732712830981989e43e0a5b"
+  },
+  {
+   "task_id": "toy-st-1010015-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010015,
+   "calls": 7,
+   "sha256": "3374ea414e9d24fc1f1b3435ae51a5e62aeec8c4ec18f1c1d51574e248606312"
+  },
+  {
+   "task_id": "toy-st-1010016-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010016,
+   "calls": 7,
+   "sha256": "f059bdbb5b24b2e5a42c4d5b662dc4eb00b0172914280d48cb8166b7670d48b8"
+  },
+  {
+   "task_id": "toy-st-1010017-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010017,
+   "calls": 7,
+   "sha256": "f39364db0b3f4b79c99b91628cc50bd7997f8c16742ef77a70eed6ba03c422aa"
+  },
+  {
+   "task_id": "toy-st-1010018-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010018,
+   "calls": 7,
+   "sha256": "5101e79d43373ac172beabb31dca7e4d163da8554c79355a55d9725f3d45f340"
+  },
+  {
+   "task_id": "toy-st-1010019-o3a2",
+   "n_orders": 3,
+   "n_accounts": 2,
+   "seed": 1010019,
+   "calls": 7,
+   "sha256": "0ccfc1638fede25ad25dd21996a2741e8806efad2c243c0937132e1b6bec3669"
+  },
+  {
+   "task_id": "toy-st-1020000-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020000,
+   "calls": 11,
+   "sha256": "31eca5222b1e954cb22dcf4b81d93f847a281848011d0be632ef7f255d20a69a"
+  },
+  {
+   "task_id": "toy-st-1020001-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020001,
+   "calls": 11,
+   "sha256": "f4e0f69881d7403e8bbe4d6ac0d2311f497e0f0b47e5f3733cc308986716d01f"
+  },
+  {
+   "task_id": "toy-st-1020002-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020002,
+   "calls": 11,
+   "sha256": "e62787905f392452b349ada8f88beb2c7190f8f92b21e77b983acf5c41d1dbdd"
+  },
+  {
+   "task_id": "toy-st-1020003-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020003,
+   "calls": 11,
+   "sha256": "2568719171b53b5f85345bba4c79ff42b5dea17fc0cc9af5c91dbc0950b1950f"
+  },
+  {
+   "task_id": "toy-st-1020004-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020004,
+   "calls": 11,
+   "sha256": "4f36f366020009679b8a2fdda1788a49a47378d74ede7a4f1c419dce6a69e1d9"
+  },
+  {
+   "task_id": "toy-st-1020005-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020005,
+   "calls": 11,
+   "sha256": "2a9bad03858ff3c911ae43df534526c10a784f15cbfea5d9cdc5b5e994091981"
+  },
+  {
+   "task_id": "toy-st-1020006-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020006,
+   "calls": 11,
+   "sha256": "2ee0a941acde18789bffe0192cb8771d6634458b437dbf463368fcff522e2118"
+  },
+  {
+   "task_id": "toy-st-1020007-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020007,
+   "calls": 11,
+   "sha256": "f8b5bad4173dd9999c2b62d6415cb73f2a4a02060a657551f4f9c5dacabcbb7b"
+  },
+  {
+   "task_id": "toy-st-1020008-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020008,
+   "calls": 11,
+   "sha256": "e54e2bae8a2a5352c9ab74cba3100fe700992ed934596edd7e206dc485f04fe5"
+  },
+  {
+   "task_id": "toy-st-1020009-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020009,
+   "calls": 11,
+   "sha256": "9e761307d0b9fd3cb969207d048599baf3f5e5f220e190dea640f1e75c7139f2"
+  },
+  {
+   "task_id": "toy-st-1020010-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020010,
+   "calls": 11,
+   "sha256": "061e61aebf307717dd15123df88fbf0270a970b9594336777fec5e11a217dc7b"
+  },
+  {
+   "task_id": "toy-st-1020011-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020011,
+   "calls": 11,
+   "sha256": "35802f48024697e83f707ac9882accded4f92d1009e60308b35ccef1e8c9382e"
+  },
+  {
+   "task_id": "toy-st-1020012-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020012,
+   "calls": 11,
+   "sha256": "69b321f9feb7d2827721dc642c4c4857fe8981c3ae503c3188e8d94cce09205b"
+  },
+  {
+   "task_id": "toy-st-1020013-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020013,
+   "calls": 11,
+   "sha256": "eb05e1b1fc118b06541b8bc9e7ddd124dc156a90946aaf0545589694cf2e9668"
+  },
+  {
+   "task_id": "toy-st-1020014-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020014,
+   "calls": 11,
+   "sha256": "f618282f5a26c0717d454235c34ab592ef3121b94a109a7c7dceac9ee7484b20"
+  },
+  {
+   "task_id": "toy-st-1020015-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020015,
+   "calls": 11,
+   "sha256": "f1b96cded4d9297de7a97c12862e7ba81043207716990cb33273c9d744de0272"
+  },
+  {
+   "task_id": "toy-st-1020016-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020016,
+   "calls": 11,
+   "sha256": "1166c3e1df4509ff0a34a223d9c95644b7830768fd2dc7f6281d5a2027bf07de"
+  },
+  {
+   "task_id": "toy-st-1020017-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020017,
+   "calls": 11,
+   "sha256": "3f7e2ebb32e9a7ce0e331497d07660a8a7c9fef17ed16a2dd6248d954e104e1e"
+  },
+  {
+   "task_id": "toy-st-1020018-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020018,
+   "calls": 11,
+   "sha256": "cedd2375792a251de9029292f824a2cfde83303ef6c37cbb2bc936eff45578b1"
+  },
+  {
+   "task_id": "toy-st-1020019-o5a1",
+   "n_orders": 5,
+   "n_accounts": 1,
+   "seed": 1020019,
+   "calls": 11,
+   "sha256": "409b50b57f4e3d425fcaf78cde4156d9422383257ae12b358a3ea17cbb53e7c3"
+  },
+  {
+   "task_id": "toy-st-1030000-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030000,
+   "calls": 11,
+   "sha256": "4622bf1306a6cfba62b971cbbc2393193754f1087ae46ecbe6cb79ecaf5d7828"
+  },
+  {
+   "task_id": "toy-st-1030001-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030001,
+   "calls": 11,
+   "sha256": "57ac45b97c5cb1b3bf4c32950efc371929115421e81f5105177ca4f2e201d15e"
+  },
+  {
+   "task_id": "toy-st-1030002-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030002,
+   "calls": 11,
+   "sha256": "a47f546821b90637b63c3df5c1dcfd937e1f234e0fed36a68ae0e1a04352590e"
+  },
+  {
+   "task_id": "toy-st-1030003-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030003,
+   "calls": 11,
+   "sha256": "198fae01de1f9116655389e2014581a0a387aa5f1c883c77b4f77ca4af994328"
+  },
+  {
+   "task_id": "toy-st-1030004-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030004,
+   "calls": 11,
+   "sha256": "df1ebe199f112d322b8363a99fad164424575ec7c76694015d99659798a59846"
+  },
+  {
+   "task_id": "toy-st-1030005-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030005,
+   "calls": 11,
+   "sha256": "6c7f598a5bbb2f9bc23eb07c2d5a5abc9e5951adb29822b44ab372f54cdf4555"
+  },
+  {
+   "task_id": "toy-st-1030006-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030006,
+   "calls": 11,
+   "sha256": "7b290b03ea1486d1e24e619b12cb8ee80e4d54f23df2fb057823446576b19690"
+  },
+  {
+   "task_id": "toy-st-1030007-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030007,
+   "calls": 11,
+   "sha256": "da1be02704738f4d3a21f3a462c98c017036dedefbf5b2c692060564b4700b22"
+  },
+  {
+   "task_id": "toy-st-1030008-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030008,
+   "calls": 11,
+   "sha256": "f8090316593b99513e95ee7be3ed3586298d68eba87d746ce136194c4e75b657"
+  },
+  {
+   "task_id": "toy-st-1030009-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030009,
+   "calls": 11,
+   "sha256": "423260836a785009e4872431b1a167b691bfca58f4ac89b8b93d0455c42c6ade"
+  },
+  {
+   "task_id": "toy-st-1030010-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030010,
+   "calls": 11,
+   "sha256": "3701e4a0e4182ea4517f3df9b4e2facd0f0aa10befb06f8bdb81e7b9f2725829"
+  },
+  {
+   "task_id": "toy-st-1030011-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030011,
+   "calls": 11,
+   "sha256": "f9722063a0a88640d7b3ea11a7250c9eab7ad1f74885f6ea5e7dc68aa48ec3da"
+  },
+  {
+   "task_id": "toy-st-1030012-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030012,
+   "calls": 11,
+   "sha256": "599f31f7ae1bd0048dddf8702bef7592131a03b0516a02a55d4214fa9254bece"
+  },
+  {
+   "task_id": "toy-st-1030013-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030013,
+   "calls": 11,
+   "sha256": "d7a8db3dc68758a8b7d27ee827ea8d755f052af6d104fd728e2fb25175687887"
+  },
+  {
+   "task_id": "toy-st-1030014-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030014,
+   "calls": 11,
+   "sha256": "81d435f26d44cf73028cbdff4cc91663830243a9253e3e69a34bda81cd548313"
+  },
+  {
+   "task_id": "toy-st-1030015-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030015,
+   "calls": 11,
+   "sha256": "284feb500926c63f2a002193f321c0651ae048f7913edd7d877de57f140c216d"
+  },
+  {
+   "task_id": "toy-st-1030016-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030016,
+   "calls": 11,
+   "sha256": "591eda945ebdd329b79b0331ff3149854a1e40d5179aa1112dac0a90bbf11f6c"
+  },
+  {
+   "task_id": "toy-st-1030017-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030017,
+   "calls": 11,
+   "sha256": "b3e9adc1484a0b03f34688f8aaed105f4236e7b5beeb69b121330d8018bf0836"
+  },
+  {
+   "task_id": "toy-st-1030018-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030018,
+   "calls": 11,
+   "sha256": "591e92cef27f76e0aac35830afe8002ec2f2c7525ae22a3ae30f880f5914d793"
+  },
+  {
+   "task_id": "toy-st-1030019-o5a2",
+   "n_orders": 5,
+   "n_accounts": 2,
+   "seed": 1030019,
+   "calls": 11,
+   "sha256": "cb889741eee82bef37073f1037c1f3fdfeff6b8a99654a0ac45096a66ea86e83"
+  },
+  {
+   "task_id": "toy-st-1040000-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040000,
+   "calls": 17,
+   "sha256": "681e3267a5f7cba1dcac211aa39df900c07e866184ef9a04ce93e04b8ac9fce1"
+  },
+  {
+   "task_id": "toy-st-1040001-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040001,
+   "calls": 17,
+   "sha256": "56f7dfd44015699a0af4c8a51fb624bf12e4f206f6f587160f889ed15c946347"
+  },
+  {
+   "task_id": "toy-st-1040002-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040002,
+   "calls": 17,
+   "sha256": "bd95b1274c24e89286e4dae077eb6afff5e04b5e5a333c3f14ca4823bf3b49b6"
+  },
+  {
+   "task_id": "toy-st-1040003-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040003,
+   "calls": 17,
+   "sha256": "a413de06f1fbac3fdbf210127efcf418c239b1eeae1ea3a5151b1eafaac6e361"
+  },
+  {
+   "task_id": "toy-st-1040004-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040004,
+   "calls": 17,
+   "sha256": "844b671da3dd9f800d3f073b6a9a924e371bc8c2aa67adc65a149df6c52d1a81"
+  },
+  {
+   "task_id": "toy-st-1040005-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040005,
+   "calls": 17,
+   "sha256": "4584ee1b52cad7b398d9c17429de0f96beb21bdc283a5f333c79964bd5f4dc9f"
+  },
+  {
+   "task_id": "toy-st-1040006-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040006,
+   "calls": 17,
+   "sha256": "6d733c04f1aecb428093723e421e2a55611c58031ffb85dc0b2405c6e7866cf5"
+  },
+  {
+   "task_id": "toy-st-1040007-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040007,
+   "calls": 17,
+   "sha256": "7e144b796c64b8b5a74bc410c6571e33881f0c335ffa2a90a83f75469370a8a9"
+  },
+  {
+   "task_id": "toy-st-1040008-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040008,
+   "calls": 17,
+   "sha256": "c94977a3894e82141ef140bf53ba7e955657cfbe046dedbf6a2affe91caaed03"
+  },
+  {
+   "task_id": "toy-st-1040009-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040009,
+   "calls": 17,
+   "sha256": "62adb2777fc19f0176a71f2e96ce2da390709f2011b57621c4bc9b8e35bb4d81"
+  },
+  {
+   "task_id": "toy-st-1040010-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040010,
+   "calls": 17,
+   "sha256": "e3d9a2545dd3dd97c27f47eb5b7912c1445d2933c58d1fbd64165841d377491f"
+  },
+  {
+   "task_id": "toy-st-1040011-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040011,
+   "calls": 17,
+   "sha256": "61a618569a27a6e4c54b64a3c7e5f2c71cbae0c5f168f9486d57fea6ae45ed49"
+  },
+  {
+   "task_id": "toy-st-1040012-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040012,
+   "calls": 17,
+   "sha256": "51e3769e71fd602e29db70d6e8b49d61d73a205ede0909b2925887c0b5056be1"
+  },
+  {
+   "task_id": "toy-st-1040013-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040013,
+   "calls": 17,
+   "sha256": "62234aa4e5ea590cb2237c5df80d47b50e172dac7002361d87f3775cb6bb10a7"
+  },
+  {
+   "task_id": "toy-st-1040014-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040014,
+   "calls": 17,
+   "sha256": "089cc43afe69a66cd3492221406a73b2e8f504bee3e7daac75d619755c4b6084"
+  },
+  {
+   "task_id": "toy-st-1040015-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040015,
+   "calls": 17,
+   "sha256": "7427088b88c2eddb8f490d64640e80ce1173f494c28026bff1f32614509b51e1"
+  },
+  {
+   "task_id": "toy-st-1040016-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040016,
+   "calls": 17,
+   "sha256": "4f4dd0448c90a291e3642be171a2f32e99187e654bfef4dd33bb38214582da6f"
+  },
+  {
+   "task_id": "toy-st-1040017-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040017,
+   "calls": 17,
+   "sha256": "5c1a48302d07bb6507e8960865dff5e7286a953615dbcac33e024b6c9c275ec8"
+  },
+  {
+   "task_id": "toy-st-1040018-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040018,
+   "calls": 17,
+   "sha256": "79172deaf77cbbc43534e2a423ded169aa2daa3fe850d17616a8a333606edccf"
+  },
+  {
+   "task_id": "toy-st-1040019-o8a2",
+   "n_orders": 8,
+   "n_accounts": 2,
+   "seed": 1040019,
+   "calls": 17,
+   "sha256": "13c61aecb6d5f5bdf8939d1778f6b86b00493098f5fa427378b29035f62c21b8"
+  },
+  {
+   "task_id": "toy-st-1050000-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050000,
+   "calls": 17,
+   "sha256": "63a0654ec6accc04b06a2e2f656bc6838be96806240625fccbb14af765b4e585"
+  },
+  {
+   "task_id": "toy-st-1050001-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050001,
+   "calls": 17,
+   "sha256": "2a3e69f20b245f4d70fe40bbebfde917e1da8da21c7c5e8bc0b610311acbf820"
+  },
+  {
+   "task_id": "toy-st-1050002-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050002,
+   "calls": 17,
+   "sha256": "8a08d09fb859ba953430e08580cf44bd551b572d285ef0143ac1b39da46919a9"
+  },
+  {
+   "task_id": "toy-st-1050003-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050003,
+   "calls": 17,
+   "sha256": "45c763e953ae3fca3f9b9acf4dd3782f315a4ddd529d20604e5998f2282535e0"
+  },
+  {
+   "task_id": "toy-st-1050004-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050004,
+   "calls": 17,
+   "sha256": "f9184feaebb2b01d1a7e6643bbb2410616ffc9c58f14d3c571bfec35def873d4"
+  },
+  {
+   "task_id": "toy-st-1050005-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050005,
+   "calls": 17,
+   "sha256": "2bab229b3f2e7f7402fae1aacb536a6346143e072e2ee0b6054360dd9e42ce21"
+  },
+  {
+   "task_id": "toy-st-1050006-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050006,
+   "calls": 17,
+   "sha256": "3c770382202ea9d224d2bfe06c3b904d1bcc2026628398d197aeec1040820db2"
+  },
+  {
+   "task_id": "toy-st-1050007-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050007,
+   "calls": 17,
+   "sha256": "4404a21cc5ef075354787a565ebd45c0dfe6ca4b908fb8b93e10b935bc7ac2bf"
+  },
+  {
+   "task_id": "toy-st-1050008-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050008,
+   "calls": 17,
+   "sha256": "23b5edd4cc3ef91c0ae823dd32699150d1e30a5606d54482a6862cbc05ef9f73"
+  },
+  {
+   "task_id": "toy-st-1050009-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050009,
+   "calls": 17,
+   "sha256": "eae2955cfaf76c35fccd04af5fcbdb557cf8fbfa1227876bc356469a9c51588b"
+  },
+  {
+   "task_id": "toy-st-1050010-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050010,
+   "calls": 17,
+   "sha256": "571083b06573289225ccb312903976f5e998f1ed34505eb020e03647bf071cd9"
+  },
+  {
+   "task_id": "toy-st-1050011-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050011,
+   "calls": 17,
+   "sha256": "aae835248d196869253724f8c272b491c5f39b573ce73d403df0181da3108528"
+  },
+  {
+   "task_id": "toy-st-1050012-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050012,
+   "calls": 17,
+   "sha256": "61ae6529c3161b9bb9b5b7d838bb778d8cf26c88dfe11c74dde43dbe2a843b9f"
+  },
+  {
+   "task_id": "toy-st-1050013-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050013,
+   "calls": 17,
+   "sha256": "9abddf3f2cb0a14d286b9c10db707f7c4611cd320b64ef2d7da37d1a079b3106"
+  },
+  {
+   "task_id": "toy-st-1050014-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050014,
+   "calls": 17,
+   "sha256": "53bacfd19cdb39833142800549f6e3ad2c23ce9878652be88774cac6c1feca07"
+  },
+  {
+   "task_id": "toy-st-1050015-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050015,
+   "calls": 17,
+   "sha256": "bab934f3f5479f2ff85d2a7369c68a433d113c58fd261cb8a2b442131920c74d"
+  },
+  {
+   "task_id": "toy-st-1050016-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050016,
+   "calls": 17,
+   "sha256": "7ccc0f493315fba7e55b1744d77f0e02794796e96c6c134634e733dde2e9bff8"
+  },
+  {
+   "task_id": "toy-st-1050017-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050017,
+   "calls": 17,
+   "sha256": "b78a68eea768c7b70ce0777b8677332ec4be609d7f6a143ad5e7d2e541badb9d"
+  },
+  {
+   "task_id": "toy-st-1050018-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050018,
+   "calls": 17,
+   "sha256": "7c7f49cfa1727664be98fa5df63c751f3ad64938f60ef4e271efc31a1e2f59b5"
+  },
+  {
+   "task_id": "toy-st-1050019-o8a3",
+   "n_orders": 8,
+   "n_accounts": 3,
+   "seed": 1050019,
+   "calls": 17,
+   "sha256": "f9c83e7daa7652340009d1d412c46f2a922655c68176045d8ede91de125731b7"
+  }
+ ]
+}

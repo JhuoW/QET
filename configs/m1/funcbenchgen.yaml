@@ -1,0 +1,31 @@
+# M1.2: the FuncBenchGen grid and splits (EVAL_PLAN §3.1), built by scripts/make_m1_manifests.py into
+# configs/m1/manifests/*.json, whose sha256 values are recorded in docs/DECISIONS.md (D-028). Test sizes are provisional:
+# Gate A fixes them by power analysis, and the test manifests are frozen there (EVAL_PLAN §0).
+funcbenchgen_commit: 0729e2567dfaee1e53262ba9bfd5ba6a4b4e4343
+grid:
+  core: [5, 10, 20]
+  depth: all  # 1 .. core - 1
+  irrelevant:
+    - {count: 0}
+    - {count: 10, form: connected}
+    - {count: 10, form: disconnected}
+    - {count: 10, form: mixed}
+    - {count: 20, form: connected}
+    - {count: 20, form: disconnected}
+    - {count: 20, form: mixed}
+splits:
+  train: {graphs: 5000, seed_start: 0}  # round-robin over the cells, one trial per graph
+  dev: {graphs_per_cell: 4, seed_start: 10000000}  # model selection only
+  test: {graphs_per_cell: 20, seed_start: 20000000}  # provisional size (Gate A)
+  heldout_larger:  # more calls than any training cell
+    core: [30]
+    depth: [1, 2, 4, 8, 16, 29]
+    irrelevant: [{count: 0}, {count: 10, form: connected}]
+    graphs_per_cell: 20
+    seed_start: 30000000
+  renamed: {of: test}  # the test graphs with new tool names, variable names, types and values
+stateful:  # the stateful extension, reported separately (D-028): toy accounts-and-orders tasks
+  cells: [{n_orders: 3, n_accounts: 1}, {n_orders: 3, n_accounts: 2}, {n_orders: 5, n_accounts: 1},
+          {n_orders: 5, n_accounts: 2}, {n_orders: 8, n_accounts: 2}, {n_orders: 8, n_accounts: 3}]
+  train: {graphs: 1200, seed_start: 0}
+  test: {graphs_per_cell: 20, seed_start: 1000000}

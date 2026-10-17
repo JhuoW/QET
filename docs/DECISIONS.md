@@ -33,6 +33,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-025 | Proposed | Runner details and what the smoke audit asks of M1 |
 | D-026 | Proposed | Inference and evaluation details (end-of-E1 review) |
 | D-027 | Proposed | FuncBenchGen adapter details |
+| D-028 | Proposed | M1 grid, splits and manifests (draft until Gate A) |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -371,7 +372,36 @@ of a message. (d) Contracts: every function is pure (SPEC §3); the repository's
 dependencies, which Compile recovers from values, and a hidden value equal to a stated input defeats that and fails
 the replay audit (seen on 1 graph of 30 in a 5-function cell), so M1.3 runs the audit and falls back to a chain. (e)
 `funcbenchgen.py` imports LiteLLM at module level for API calls the adapter never makes, so a stub module stands in
-for it. Default: as described; cheap to reverse.
+for it. (f) The repository's generator turns sets of names into lists
+before drawing from them, so its graphs depend on Python's per-process string hashing (found when manifests built in
+one process differed from another's); the adapter builds graphs under PYTHONHASHSEED=0, in a helper process when
+the caller runs under another seed, and caches them, as the repository's runner caches graphs on disk. Everything
+after the graph (types, values, prompt, schemas) does not depend on hashing. Default: as described; cheap to
+reverse.
+
+### D-028 M1 grid, splits and manifests (draft until Gate A)
+`configs/m1/funcbenchgen.yaml` (sha256 9ecc71346472dd8c6a42dea7103e8140f16c42a4837d21101e6c419480b0d7e5) and `scripts/make_m1_manifests.py` build
+`configs/m1/manifests/*.json`: every task with its cell, seed, trial, variant and the sha256 of its content (public
+text, gold calls, answer, true DAG). (a) The grid is EVAL_PLAN §3.1's in full: core functions 5, 10, 20; every depth
+1 .. n-1; irrelevant functions 0, or 10 and 20 each connected, disconnected (their own subgraph) or mixed (half each):
+224 cells. (b) Training: 5,000 graphs round-robin over the cells (about 22 per cell), graph seeds 0-4,999, one trial
+each. Dev (model selection): 4 graphs per cell, seeds from 10,000,000. Test: 20 graphs per cell, seeds from 20,000,000,
+a provisional size that Gate A replaces by power analysis. Held-out larger: 30 core functions (more calls than any
+training cell) at depths 1, 2, 4, 8, 16, 29 with 0 or 10 connected irrelevant functions, 20 graphs each, seeds from
+30,000,000. Renamed: the test graphs with new tool names, variable names, types and values. Seed ranges are disjoint, so
+no graph is in two splits. (c) The stateful extension is the toy accounts-and-orders tasks (`qet.envs.toy`) in six
+cells (3, 5, 8 orders; 1-3 accounts): 1,200 training and 120 test tasks, reported separately; it has stateful tools,
+effect and decision edges, and payments that truly commute but that Compile cannot certify. Whether this matches the
+method page's extension is the human's call at Gate A. (d) The manifests rebuild byte for byte from code, the spec and
+the pinned repository under any hash seed (built with PYTHONHASHSEED=7, checked with 99). sha256 of the files:
+  `train.json` 35919d61dce815d1ec85f81d015d05053a6c5ff4e9a0378556cb2ead12386427
+  `dev.json` c6fb851180d8a4201923ca94111c8572301bc172c7420e381f74ee7df315b31f
+  `test.json` 36bec2d1d8ae4eb4e703c88fe5bf3fb3969aaea1600ba2c3ada18af6f7ff1835
+  `heldout_larger.json` 7aa0a12ba2450252e13ba79669e3dcde806c1508981ff2f9421a59e5915febab
+  `renamed.json` 825d4b0fba0a24599418348c78f06818513ed60b9041f4c9c40e719681941223
+  `stateful_train.json` 2e9318bd5ece43a35d8faebd649153575b1e75930c329f4df9f753037d2b8bd8
+  `stateful_test.json` 3c8b6cbb96af7f96c0c880af94dfd549ca6c41622936e449ad93a5718ef1b45b
+These are drafts: the test manifests are frozen at Gate A (EVAL_PLAN §0), and any change before then is recorded here.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.

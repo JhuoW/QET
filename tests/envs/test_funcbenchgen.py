@@ -106,3 +106,25 @@ def test_public_task_and_contracts():
     env = FuncBenchGenEnv(task)
     assert set(env.contracts()) == {t["name"] for t in x["tools"]} - {"finish"}
     assert all(c == {"reads": [], "writes": []} for c in env.contracts().values())
+
+
+def test_tasks_are_the_same_under_any_hash_seed():
+    """FuncBenchGen's generator depends on string hashing; the adapter builds its graphs under PYTHONHASHSEED=0."""
+    import os
+    import subprocess
+    import sys
+
+    code = ("from qet.envs.funcbenchgen import build_task, cell_config, task_digest; "
+            "print(task_digest(build_task(cell_config(10, 4, 10, 'mixed'), 7)), "
+            "task_digest(build_task(cell_config(20, 9, 20, 'connected'), 123, renamed=True)))")  # fmt: skip
+    outs = [
+        subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            check=True,
+            env={**os.environ, "PYTHONHASHSEED": seed},
+        ).stdout.split()  # fmt: skip
+        for seed in ("0", "1", "12345")
+    ]
+    assert outs[0] == outs[1] == outs[2] and len(outs[0]) == 2
