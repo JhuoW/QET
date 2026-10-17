@@ -147,8 +147,18 @@ Goal: the end-to-end pipeline works and is provably consistent before any expens
   audit against the true DAG; per split: records, raw records, per-task audits and the compile report
   (report.json); `pytest tests/envs/test_m1_compile.py -q -m ""` → 5 passed; the statistics go to Gate A through
   the results-auditor; commit 76c0230
-- [ ] **M1.4 Pilot**: 500 training graphs; lattice sizes, width bins, tokens per graph; a short configuration-6
+- [x] **M1.4 Pilot**: 500 training graphs; lattice sizes, width bins, tokens per graph; a short configuration-6
   run on Qwen2.5-7B-Instruct to measure throughput; GPU-hour projection for the run matrix.
+  evidence: `python scripts/m1_pilot_stats.py --compile-run results/raw/M1-compile-20261017T161839Z` →
+  results/raw/M1-pilot-stats-20261017T190141Z (commit 195883c, clean; RUNLOG row; byte-identical to the earlier
+  run M1-pilot-stats-20261017T172519Z): width bins, lattice sizes and tokens per graph for configurations 2-6 and
+  a2-a4 on the first 500 training graphs, invariance on every prefix of 5 random orders per graph; `qsub -v
+  CONFIG=configs/m1/pilot-qet.yaml -o logs/pbs/ scripts/pbs/run.pbs` (job 88015.gaas, 1 H200, after the dry run) →
+  results/raw/M1-pilot-qet-s0-20261017T175029Z (commit 3c8b23a, clean, completed, no code change during the run;
+  RUNLOG row): pass-1 and pass-2 throughput, peak memory, decoding speed; `python scripts/gate_report.py --gate A`
+  → docs/reports/gate-A.md (structure, tokens per graph, throughput, memory, the GPU-hour projection for the
+  33-run matrix, the decoding limit, test-size options), results-auditor: FAIL at 3d18db1 (4 blocking items,
+  fixed), PASS WITH NOTES at 031fd79 (notes applied); commit bbb8f99
 - [ ] **GATE A** (`scripts/gate_report.py --gate A` → `docs/reports/gate-A.md`): compile coverage and fallback,
   width distribution, incomparable-pair share, states per graph, true-DAG agreement, invariance test results,
   tokens per graph, GPU budget, proposed test size per cell (power analysis), final wording of EVAL_PLAN §9.
