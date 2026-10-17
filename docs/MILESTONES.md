@@ -65,8 +65,14 @@ Goal: the end-to-end pipeline works and is provably consistent before any expens
   2001/2031 and different hash seeds give identical prompt ids, and a clock-reading Llama template differs unpinned);
   `make lint` → exit 0; spec-reviewer: no blocking findings (review of d7f0f7f, follow-up of 321a214: S1-S6 fixed),
   last should-fix fixed in 8253e11 (D-022); commit 8253e11 (work: d7f0f7f, 321a214)
-- [ ] **E1.2 Scorer** (`train/scoring.py`). Accept: log π equals a manual per-token computation; batch and
+- [x] **E1.2 Scorer** (`train/scoring.py`). Accept: log π equals a manual per-token computation; batch and
   padding invariance within 1e-4 (bf16) / 1e-9 (float64 on CPU); eval mode asserted; token counts reported.
+  evidence: `pytest tests/train/test_scoring.py -q -m "not gpu"` → 17 passed (manual per-token log pi within 1e-12;
+  float64 batch/padding invariance within 1e-9; gradients; eval mode; no_grad in pass 1; float32 log-softmax and
+  float64 sums on bf16/fp16 models; token counts); `pytest -m gpu` in PBS job 87789.gaas on an H200 at c21333c →
+  2 passed, bf16 batch invariance worst |delta log pi| = 0 over 24 pairs (Qwen2.5-0.5B-Instruct); `make lint` →
+  exit 0; spec-reviewer: no blocking findings, S1-S3 fixed in 6e854c8, the all-ones mask of note N1 reverted in
+  c21333c after job 87769.gaas measured 0.50 nats of bf16 batch dependence (D-024b); commit c21333c (work: cf5641e)
 - [ ] **E1.3 Two-pass trainer** (`train/trainer.py`, `train/methods.py`; LoRA via PEFT with dropout 0). Accept:
   (a) on a tiny random-weight model in float64 on CPU, the two-pass gradient equals the autograd gradient of the
   objective through the lattice for configurations 5 and 6, and of the logged objective with state weights held
