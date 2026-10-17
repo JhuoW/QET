@@ -27,6 +27,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-019 | Proposed | Repeat numbering per identical call; steps carry an observation |
 | D-020 | Proposed | Guards for later milestones (task constraints, inference canonicalization) |
 | D-021 | Proposed | Compute and access policy until the human sets a budget |
+| D-022 | Proposed | Chat details left open by SPEC §6.7 and D-002 |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -206,6 +207,21 @@ calls: there is no budget, and `OPENAI_API_KEY` is not set; (d) the human's Hugg
 to `meta-llama/Llama-3.1-8B-Instruct` and `meta-llama/Llama-2-7b-hf` (checked 2026-10-17 with metadata requests
 only), so downloading them accepts no new license. The AppWorld data terms and the ToolBench / DTA-Tool terms
 remain the human's (M2). Default: as described.
+
+### D-022 Chat details left open by SPEC §6.7 and D-002
+`src/qet/train/chat.py`. (a) Each backbone is pinned to one Hugging Face commit, which fixes weights, tokenizer and
+template together: Qwen2.5-0.5B-Instruct `7ae5576`, Qwen2.5-7B-Instruct `a09a354` (the same tokenizer and template
+as 0.5B), Llama-3.1-8B-Instruct `0e9e39f`. Every manifest records the fingerprint: the sha256 of the serialized fast
+tokenizer and the sha256 of the chat template. (b) Llama 3.1 gets `date_string = "26 Jul 2024"`, the template's own
+fallback. D-002 assumed the template inserts today's date, but the pinned revision's template never reads the clock
+(no `strftime_now`; Llama 3.2 and later do), so the prompt equals the template's default. The pin keeps it fixed if
+a template ever reads the clock, which the cross-process test checks with a faked clock. (c) Decoding never
+cleans up tokenization spaces (Llama 3.1's tokenizer would turn `a , b` into `a, b` by default), so
+decode(encode(s)) = s for canonical text. (d) Message text and action strings that spell a special token of the
+tokenizer (`<|im_end|>`, `<|eot_id|>`, ...) are refused, because the tokenizer would read them as control tokens.
+Adapters keep such text out of observations; at inference (E1.4), an output containing one is an invalid action.
+(e) Prompts are validated: an explicit system message first, user and assistant turns alternating, a user turn last.
+Default: as described; cheap to reverse.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
