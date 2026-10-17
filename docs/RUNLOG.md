@@ -9,3 +9,4 @@ may add a note (for example why a run was cancelled) but never type results here
 | E1-smoke-sft-s0-20261017T074443Z | 2026-10-17T07:44:43+00:00 | E1 | configs/smoke/sft.yaml | 2 demo_order_sft | Qwen/Qwen2.5-0.5B-Instruct | 0 | c6f32b6 | completed | 0.156 | results/raw/E1-smoke-sft-s0-20261017T074443Z |  |
 | E1-smoke-qet-s0-20261017T075405Z | 2026-10-17T07:54:05+00:00 | E1 | configs/smoke/qet.yaml | 6 qet | Qwen/Qwen2.5-0.5B-Instruct | 0 | c6f32b6 | completed | 0.141 | results/raw/E1-smoke-qet-s0-20261017T075405Z |  |
 | M1-compile-20261017T161839Z | 2026-10-17T16:18:39+00:00 | M1 | scripts/compile_m1.py | compile | - | - | 2e428e3 | completed | 0 | results/raw/M1-compile-20261017T161839Z |  |
+| M1-pilot-qet-s0-20261017T175029Z | 2026-10-17T17:50:29+00:00 | M1 | configs/m1/pilot-qet.yaml | 6 qet | Qwen/Qwen2.5-7B-Instruct | 0 | 3c8b23a | completed | 0.394 | results/raw/M1-pilot-qet-s0-20261017T175029Z |  |
