@@ -107,12 +107,22 @@ python scripts/gate_report.py --gate A|B|appworld
 - deleting or overwriting results or checkpoints, rewriting git history, pushing, or publishing anything.
 
 ## Environment (the human fills this in before E1)
-- Compute: `<GPU model × count, memory, scheduler and partition, max concurrent jobs>`
-- Ask before any job above: `<N GPU-hours>`; budget per milestone: `<E1 …, M1 …, M2 …>`
-- API budget: `<USD and models>`; keys only from environment variables (`OPENAI_API_KEY`, `HF_TOKEN`); never
+Filled in by the agent on 2026-10-17 from the machine itself (`qstat -Qf`, `pbsnodes`, `~/GPU_Usage/`) after the
+human said to proceed without their checks. The budget lines are the agent's interim policy (D-021), not a budget
+set by the human.
+- Compute: NTU GaaS, PBS (`qsub`). The login node `hpc-gaas-hn2` has no GPU; GPU work runs only in PBS jobs. GPU
+  nodes: 8 × NVIDIA H200 (141 GB), 100 CPUs, 2 TB RAM. Queue `gpu_ppu` (pay-per-use; routes to `gpu_ppu_high`,
+  walltime ≤ 1 h, and `gpu_ppu_normal`, ≤ 336 h), project `ccds_siqiang.luo`; the free queues are not open to this
+  account. Max concurrent jobs: not set (the agent runs one at a time).
+- Ask before any job above: 1 GPU-hour, or any job that takes E1 past 10 GPU-hours in total (interim, D-021);
+  budget per milestone: not set by the human (M1 needs one before the M1.4 pilot).
+- API budget: none, so no paid API calls; keys only from environment variables (`OPENAI_API_KEY`, `HF_TOKEN`); never
   write keys to files, configs, logs or manifests.
-- Paths: data `<…>`, Hugging Face cache `<…>`, checkpoints `<…>`, results `<…>`
-- Toolchain: Python `<3.11>`, CUDA `<12.x>`, package manager `<uv | pip>`
+- Paths: data `data/`, Hugging Face cache `~/.cache/huggingface` (models are downloaded on the login node; jobs run
+  with `HF_HUB_OFFLINE=1`), checkpoints `checkpoints/`, results `results/raw/` (all git-ignored).
+- Toolchain: Python 3.12.15 (`~/anaconda3` base environment, validated on an H200 by the human's job 87357; the code
+  targets 3.11+), CUDA 12.8 from the PyTorch 2.8.0 wheels (driver 580), package manager pip with
+  `-c ~/GPU_Usage/llm-base/constraints.txt`; PBS template `~/GPU_Usage/llm-base/validate.pbs`.
 
 ## Conventions
 Python 3.11, type hints, ruff, pytest (markers `gpu`, `slow`); dataclasses for records; JSON / JSONL for data

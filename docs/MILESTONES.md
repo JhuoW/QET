@@ -49,7 +49,9 @@ Goal: `src/qet/core` reproduces every fixture; property tests hold on random ins
   evidence: `docs/reports/E0-review.md` saved: end-of-E0 review at ce7ef3e and follow-ups at 73e7413 and f11fbce,
   each "no blocking findings"; should-fix items fixed (73e7413, f11fbce), the rest recorded in D-015-D-020 and
   Q7-Q15; `pytest reference -q` → 134 passed; `make test` → 292 passed; `make lint` → exit 0; commit b604c87
-- [ ] **GATE E0** (optional but recommended): the human reads the core diff and the review.
+- [x] **GATE E0** (optional but recommended): the human reads the core diff and the review.
+  waived by the human on 2026-10-17: "You do not need to let me check, you goal is to implement the QET and its
+  evaluations." (not a review; the core diff and `docs/reports/E0-review.md` remain unread by the human)
 
 ## E1 — Training and inference stack on a tiny model (SPEC §6.5–§7; 1 GPU)
 Goal: the end-to-end pipeline works and is provably consistent before any expensive run.

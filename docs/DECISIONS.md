@@ -26,6 +26,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-018 | Proposed | Lattice and weight details left open by SPEC §6, §8 |
 | D-019 | Proposed | Repeat numbering per identical call; steps carry an observation |
 | D-020 | Proposed | Guards for later milestones (task constraints, inference canonicalization) |
+| D-021 | Proposed | Compute and access policy until the human sets a budget |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -193,12 +194,29 @@ are >= n before building bitmasks (memory) and report keys that name no edge (fa
 is a dependency (E1), GPU tests are selected from what torch sees (`CUDA_VISIBLE_DEVICES` respected) rather than
 from `nvidia-smi -L` (note 3). Default: as described; to be implemented and tested in E1 and M1.
 
+### D-021 Compute and access policy until the human sets a budget
+On 2026-10-17 the human said: "You do not need to let me check, you goal is to implement the QET and its
+evaluations." So review-only stops (GATE E0) are waived and the agent moves from task to task. Spending stays the
+human's decision. Every GPU queue open to this account is billed (`gpu_ppu`, project `ccds_siqiang.luo`); the free
+queues' access lists do not include the account's group. Hence: (a) E1 jobs use 1 GPU and at most 1 h of walltime
+each, one job at a time, at most 10 GPU-hours for E1 in total, and each job is named in the task's evidence or
+RUNLOG; (b) anything larger waits for a GPU budget from the human: the M1.4 throughput pilot on Qwen2.5-7B-Instruct
+and the M1.5-M1.7 run matrix. The agent asks once, with the pilot's measured projection (Gate A); (c) no paid API
+calls: there is no budget, and `OPENAI_API_KEY` is not set; (d) the human's Hugging Face account already has access
+to `meta-llama/Llama-3.1-8B-Instruct` and `meta-llama/Llama-2-7b-hf` (checked 2026-10-17 with metadata requests
+only), so downloading them accepts no new license. The AppWorld data terms and the ToolBench / DTA-Tool terms
+remain the human's (M2). Default: as described.
+
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
 - [ ] Q2 Compute: GPUs, scheduler, concurrency, GPU-hour threshold for asking, budget per milestone.
+  (2026-10-17: hardware, scheduler and queue filled into AGENTS.md from the machine; threshold and budgets still
+  open, interim policy D-021.)
 - [ ] Q3 API budget and models: StableToolBench judge (gpt-4-turbo-2024-04-09 or a fixed replacement), any
   strong-model demonstrations or LLM-drafted contracts.
 - [ ] Q4 Access: Llama 3.1 / Llama 2 licenses on Hugging Face, AppWorld data terms, ToolBench / DTA-Tool terms.
+  (2026-10-17: the human's Hugging Face account already has access to both Llama repositories, D-021d; AppWorld
+  and ToolBench / DTA-Tool terms still open.)
 - [ ] Q5 Publication: is code, data or checkpoints going to be released (affects license checks and AppWorld
   rules)?
 - [ ] Q6 Anything in SPEC.md the human wants to change before E0 starts.
