@@ -4,10 +4,15 @@ PYTHON ?= python3
 # D-020e). Recursive (=) so that only `make test` pays for importing torch.
 HAVE_GPU = $(shell $(PYTHON) -c "import sys, torch; sys.exit(not torch.cuda.is_available())" >/dev/null 2>&1 && echo 1)
 
-.PHONY: setup lint test-fast test smoke
+.PHONY: setup fetch lint test-fast test smoke
 
 setup:
-	$(PYTHON) -m pip install -e ".[dev]"
+	$(PYTHON) -m pip install -e ".[dev,train]"
+
+# The pinned tokenizers (which the tests read) and the smoke model, into the Hugging Face cache. Needs network and an
+# account with access to the gated Llama repositories; run once, on the login node.
+fetch:
+	$(PYTHON) scripts/fetch_models.py --weights Qwen/Qwen2.5-0.5B-Instruct
 
 lint:
 	$(PYTHON) -m ruff check .

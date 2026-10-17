@@ -193,7 +193,10 @@ their compile report. (c) E1.3: the trainer logs `logged_objective(edge_weights(
 objective (second follow-up review, note 1). (d) The facade `lattice_summary` should reject keys whose node ids
 are >= n before building bitmasks (memory) and report keys that name no edge (facade only; note 2). (e) Once torch
 is a dependency (E1), GPU tests are selected from what torch sees (`CUDA_VISIBLE_DEVICES` respected) rather than
-from `nvidia-smi -L` (note 3). Default: as described; to be implemented and tested in E1 and M1.
+from `nvidia-smi -L` (note 3). (f) `canon` accepts lone surrogates (`json.loads('"\\ud800"')`), which no
+tokenizer can encode; the chat layer refuses them with a clear error (D-022d). Proposed for core: reject them in
+`canon`, as it rejects NaN (E1.1 review, note 6).
+Default: as described; to be implemented and tested in E1 and M1.
 
 ### D-021 Compute and access policy until the human sets a budget
 On 2026-10-17 the human said: "You do not need to let me check, you goal is to implement the QET and its
@@ -212,16 +215,34 @@ remain the human's (M2). Default: as described.
 `src/qet/train/chat.py`. (a) Each backbone is pinned to one Hugging Face commit, which fixes weights, tokenizer and
 template together: Qwen2.5-0.5B-Instruct `7ae5576`, Qwen2.5-7B-Instruct `a09a354` (the same tokenizer and template
 as 0.5B), Llama-3.1-8B-Instruct `0e9e39f`. Every manifest records the fingerprint: the sha256 of the serialized fast
-tokenizer and the sha256 of the chat template. (b) Llama 3.1 gets `date_string = "26 Jul 2024"`, the template's own
-fallback. D-002 assumed the template inserts today's date, but the pinned revision's template never reads the clock
-(no `strftime_now`; Llama 3.2 and later do), so the prompt equals the template's default. The pin keeps it fixed if
-a template ever reads the clock, which the cross-process test checks with a faked clock. (c) Decoding never
-cleans up tokenization spaces (Llama 3.1's tokenizer would turn `a , b` into `a, b` by default), so
-decode(encode(s)) = s for canonical text. (d) Message text and action strings that spell a special token of the
-tokenizer (`<|im_end|>`, `<|eot_id|>`, ...) are refused, because the tokenizer would read them as control tokens.
-Adapters keep such text out of observations; at inference (E1.4), an output containing one is an invalid action.
-(e) Prompts are validated: an explicit system message first, user and assistant turns alternating, a user turn last.
-Default: as described; cheap to reverse.
+tokenizer without the backend's transient truncation and padding settings, the sha256 of the chat template, the
+sha256 of the ids of a fixed probe prompt and two targets, and the transformers, tokenizers and jinja2 versions.
+`tests/train/golden_chat_ids.json` pins the ids of two prompts and six targets per backbone, so a library change
+that changes ids fails a test. A `ChatFormat` refuses a tokenizer of another backbone. `make fetch` downloads the
+pinned tokenizers, which the tests read, and the smoke model. (b) Llama 3.1 gets `date_string = "26 Jul 2024"`.
+D-002 assumed the template inserts today's date, but the pinned revision's template never reads the clock (no
+`strftime_now`): without `date_string` it uses this same fixed date, so the pin changes nothing for this revision.
+The pin protects against a template that reads the clock: the cross-process test edits the Llama template to take
+its date from the clock (as Llama 3.2's does) and shows, with faked years and different hash seeds, that the prompt
+then changes with the year when unpinned and stays fixed when pinned. (c) Decoding never cleans up tokenization
+spaces (Llama 3.1's tokenizer would turn `a , b` into `a, b` by default); decode(encode(s)) = s holds for NFC text
+(Qwen's tokenizer NFC-normalizes its input). `target_ids` checks each target: the canonical shape (`{"tool":` first,
+no surrounding whitespace), NFC as a whole, and an exact decode round trip; otherwise it raises. A canonical action
+can fail the NFC check when JSON escaping puts an ASCII letter before a combining mark (Q16). (d) Text that matches
+`<|...|>` (the form of every special token of the supported backbones) or a special token of the loaded tokenizer is
+refused in prompts and targets, the same way on every backbone, so one dataset is accepted or refused everywhere;
+`special_text()` gives adapters the same test, to sanitize observations identically before Compile and at
+inference (recorded in their compile report). Qwen's non-special added tokens (`<tool_call>`, ...) are allowed:
+they round-trip and are tokenized the same in training and inference. Lone surrogates are refused with a clear
+error (see D-020f). (e) Prompts are validated: an explicit system message first, user and assistant turns
+alternating, a user turn last. (f) Guards for inference (E1.4): pass `prompt_ids` to the model (vLLM
+`prompt_token_ids`), never `prompt_text`, whose default re-tokenization adds a second begin-of-text on Llama; decode
+outputs with `ChatFormat.decode`; pass `eos_token_id=[eot_id]` and explicit decoding settings (greedy, or T = 1.0,
+top-p 1.0, top-k off, repetition penalty 1.0), because the backbones' generation_config sets other defaults
+(Qwen2.5: sampling at T = 0.7, top-p 0.8, top-k 20, repetition penalty 1.05 or 1.1, and two eos ids); load weights at
+the backbone's pinned revision. (g) Llama's template trims every message's content and Qwen's does not:
+deterministic and identical in training and inference, but on Llama a message that ends in whitespace loses it
+(D-017b holds up to that trim). Default: as described; cheap to reverse.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
@@ -269,3 +290,9 @@ Default: as described; cheap to reverse.
 - [ ] Q15 (from the E0.7 review; SPEC §1 vs §5.2) A task may name its finish tool (SPEC §1; `compile_demo` honours
   `task["finish"]`), but the pinned system text says "Call finish when the task is complete." Require adapters to
   name the finish tool `finish`, or make the system text use the task's finish name?
+- [ ] Q16 (from the E1.1 review; SPEC §2) `canon` NFC-normalizes each string, but the serialized action string can
+  still be non-NFC: JSON escaping puts an ASCII letter right before a combining mark (the value `"\n\u0303"` is
+  written as `\n` followed by U+0303, which NFC composes into `\ñ`). Qwen's tokenizer NFC-normalizes its input, so it
+  would be trained to emit invalid JSON; `target_ids` now refuses such strings on every backbone (D-022c), so a
+  demonstration carrying such a value cannot be trained on. Change `canon_json` to write a combining mark that
+  follows an escape as `\uXXXX` (no fixture is affected), or keep refusing?

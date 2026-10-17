@@ -66,6 +66,7 @@ results/tables/  results/figures/  docs/reports/
 ## Commands (E0 creates the Makefile with exactly these targets)
 ```
 make setup        # install the package and dev tools
+make fetch        # E1: pinned tokenizers (the tests read them) and the smoke model, into the HF cache (network)
 make lint         # ruff check + ruff format --check
 make test-fast    # CPU only, < 2 min: pytest tests reference -m "not gpu and not slow"
 make test         # everything that runs on this machine
