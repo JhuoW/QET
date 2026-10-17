@@ -374,6 +374,7 @@ def test_lr_schedule():
     assert lr_at(1.0, 1e-4, 0.03) == pytest.approx(0.0, abs=1e-20)
 
 
+@pytest.mark.slow  # imports peft: 10-30 s on the shared login node
 def test_train_spends_the_token_budget_and_checkpoints_at_fractions(fmt, recs):
     model = add_lora(lm(6), rank=4, alpha=8)
     dropouts = [m.lora_dropout["default"] for m in model.modules() if hasattr(m, "lora_dropout")]

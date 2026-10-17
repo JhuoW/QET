@@ -111,6 +111,7 @@ def test_micro_batches_cover_every_pair_once_within_the_budget():
             assert len(b) == 1 or len(b) * max(len(pairs[i]) for i in b) <= budget
 
 
+@pytest.mark.slow  # imports peft: 10-30 s on the shared login node
 def test_lora_wrapped_models_score_through_the_adapters():
     from peft import LoraConfig, get_peft_model
 
@@ -179,6 +180,7 @@ def test_log_softmax_in_float32_and_sums_in_float64(dtype):
         assert (got - low).abs().max() > 1e-3  # the test would notice a log-softmax in the model's dtype
 
 
+@pytest.mark.slow  # imports peft: 10-30 s on the shared login node
 def test_adapters_other_than_lora_and_dynamic_rope_are_refused():
     from peft import PrefixTuningConfig, PromptTuningConfig, get_peft_model
 
