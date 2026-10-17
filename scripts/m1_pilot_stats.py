@@ -37,6 +37,7 @@ def main(argv: list[str] | None = None) -> Path:
     parser.add_argument("--graphs", type=int, default=500)
     parser.add_argument("--k", type=int, default=4, help="sub-lattice orders above S_max (and a4)")
     parser.add_argument("--backbone", default="Qwen/Qwen2.5-7B-Instruct")
+    parser.add_argument("--orders", type=int, default=5, help="random legal orders per graph for the invariance check")
     parser.add_argument("--out", type=Path, default=REPO / "results" / "raw")
     args = parser.parse_args(argv)
     run = args.compile_run if args.compile_run.is_absolute() else REPO / args.compile_run
@@ -48,8 +49,24 @@ def main(argv: list[str] | None = None) -> Path:
     fmt = ChatFormat.load(args.backbone)
     contracts = {t["name"]: {"reads": [], "writes": []} for r in records for t in r.tools if t["name"] != "finish"}
     builders = {c: PackBuilder(fmt, contracts, method(c), run_seed=0, k=args.k) for c in CONFIGS}
+    import random
+
+    from qet.core.lattice import random_topological_order
+    from qet.core.render import render
+
+    checks = failures = 0
     rows = []
     for rec in records:
+        # SPEC §5.6 (a): every prefix of random legal orders renders like the demo-order history of the same set
+        steps, task = rec.steps(), {"request": rec.request, "tools": rec.tools}
+        rng, masks = random.Random(f"invariance\x1f{rec.task_id}"), node_masks(rec.n, rec.preds())
+        for _ in range(args.orders):
+            order = random_topological_order(masks, rng)
+            for k in range(rec.n + 1):
+                done = sorted(order[:k])
+                legal = render(task, [steps[v] for v in order[:k]], contracts)
+                checks += 1
+                failures += legal != render(task, [steps[v] for v in done], contracts)
         preds = rec.preds()
         states = enumerate_states(node_masks(rec.n, preds), cap=S_MAX)
         row = {"task_id": rec.task_id, "n": rec.n, "width": width(rec.n, preds),
@@ -95,6 +112,7 @@ def main(argv: list[str] | None = None) -> Path:
         },  # fmt: skip
         "s_max": S_MAX,
         "k": args.k,
+        "invariance": {"prefixes_checked": checks, "failures": failures, "orders_per_graph": args.orders},
     }
     created = utc_now()
     out = args.out / f"M1-pilot-stats-{created:%Y%m%dT%H%M%SZ}"
