@@ -72,10 +72,14 @@ Goal: the end-to-end pipeline works and is provably consistent before any expens
   policy that follows a random legal order on the toy environment succeeds 100% and, at every step, sees a prompt
   whose sha256 equals the training prompt of that state; invalid actions end the episode (D-006); greedy and
   8-sample decoding both run.
-- [ ] **E1.5 Toy environment** (`envs/toy.py`): seeded random function DAG tasks (integer values, hidden
+- [x] **E1.5 Toy environment** (`envs/toy.py`): seeded random function DAG tasks (integer values, hidden
   intermediates, distractors, wrong inputs → seeded random outputs) plus a stateful variant (account read / pay,
   orders) that exercises effect and decision edges. Accept: gold replay scores 100%; Compile on toy demos has
   edge recall 1.0 against the generator's true DAG.
+  evidence: `pytest tests/envs/test_toy.py -q` → 26 passed (7 settings × 60 seeds: gold replay 100% in demo and
+  generation order; Compile edge recall 1.0, direct and by reachability, unsafe-order rate 0, no underived values;
+  precision 1.0 on function tasks and < 1 on stateful ones, where payments truly commute; replay audit 0
+  mismatches); `make lint` → exit 0; commit 130699a
 - [ ] **E1.6 Runner, manifests, run log** (`run.py`, `manifest.py`, `runlog.py`, `configs/` schema). Accept:
   `python -m qet.run --config configs/smoke/qet.yaml --dry-run` prints the plan, token and GPU-hour estimates
   and writes nothing; a real run writes `results/raw/<run_id>/` with a manifest containing every field of
