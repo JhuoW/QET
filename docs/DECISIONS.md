@@ -28,6 +28,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-020 | Proposed | Guards for later milestones (task constraints, inference canonicalization) |
 | D-021 | Proposed | Compute and access policy until the human sets a budget |
 | D-022 | Proposed | Chat details left open by SPEC §6.7 and D-002 |
+| D-023 | Proposed | Trainer details left open by SPEC §6.5, §8 and D-009 |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -243,6 +244,25 @@ top-p 1.0, top-k off, repetition penalty 1.0), because the backbones' generation
 the backbone's pinned revision. (g) Llama's template trims every message's content and Qwen's does not:
 deterministic and identical in training and inference, but on Llama a message that ends in whitespace loses it
 (D-017b holds up to that trim). Default: as described; cheap to reverse.
+
+### D-023 Trainer details left open by SPEC §6.5, §8 and D-009
+`src/qet/train/methods.py`, `trainer.py`. (a) Ablation a4 samples the sub-lattice for every graph, not only above
+S_max, so "exact vs a4" (claim C5) compares the two on the same graphs; configurations 3-6 use the sub-lattice only
+above S_max, with the run's K (D-018a). (b) a3 resamples its K - 1 random orders every epoch with the sub-lattice
+seed (graph id, epoch, run seed), so with equal K they are the orders whose prefix sets form a4's S. (c) The path
+configurations (1, 2, a1, a2) train on the prefix states of their order and run no pass 1; the order-sensitive
+renderers (1, a1) are allowed only with the demo order. (d) The prompt of a state renders the demo steps of that
+state in demo order (a legal history; Proposition 1 makes every legal order give the same quotient prompt). (e) The
+learning rate follows the spent fraction of the token budget, not the step count (configurations without pass 1 take
+more steps): linear warm-up over the first 3% of the budget, then cosine decay to 0 at the budget; the first step has
+learning rate 0, as in the usual step-based schedule. Gradients are clipped at norm 1.0 for every configuration;
+AdamW. (f) The budget counts real tokens (prompts plus targets, padding excluded) of pass 1 and pass 2; the step that
+crosses the budget completes; a checkpoint is taken at the first step that reaches 25, 50, 75 and 100% of the budget
+(EVAL_PLAN §8), and a final one after an early stop. (g) Each epoch visits the records in a seeded shuffle; the last
+batch of an epoch may be smaller, and pass 2 normalizes by its own number of graphs (D-014). (h) The guard against
+an update between the passes compares each trainable parameter's storage and in-place version counter before pass 1
+and before pass 2. (i) The pass-2 loss value is returned for tests only; nothing logs it (SPEC §6.5). Default: as
+described; cheap to reverse.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
