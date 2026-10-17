@@ -131,8 +131,14 @@ Goal: the end-to-end pipeline works and is provably consistent before any expens
   over 40 mixed calls, "value not yet known" and "incorrect value" included; success needs the minimum number of
   calls; tasks deterministic, the global RNG untouched; pure contracts); third_party/FuncBenchGen pinned at
   0729e25 (submodule, unmodified); `make lint` → exit 0; commit 7f3ba9d
-- [ ] **M1.2 Manifests**: frozen grid configuration, training seeds disjoint from test seeds, held-out larger and
+- [x] **M1.2 Manifests**: frozen grid configuration, training seeds disjoint from test seeds, held-out larger and
   renamed sets, stateful extension; hashes recorded in DECISIONS.md.
+  evidence: `PYTHONHASHSEED=7 python scripts/make_m1_manifests.py` → 7 manifests (224-cell grid; 5,000 train, 896
+  dev, 4,480 provisional test, 240 held-out larger, 4,480 renamed, 1,200 + 120 stateful); `PYTHONHASHSEED=99 python
+  scripts/make_m1_manifests.py --check` → all 7 identical; `pytest tests/envs/test_m1_manifests.py
+  tests/envs/test_funcbenchgen.py -q` → 19 passed (disjoint splits, the full grid, held-out larger needs more calls,
+  renamed graphs isomorphic with new names, tasks rebuild to their hashes under any hash seed); hashes in D-028
+  (drafts until Gate A); commit 31c2ec0
 - [ ] **M1.3 Demonstrations and compile** (D-007): one executed successful trace per training graph; compile;
   audit against the true DAGs (edge precision / recall, unsafe-order rate); compile report.
 - [ ] **M1.4 Pilot**: 500 training graphs; lattice sizes, width bins, tokens per graph; a short configuration-6
