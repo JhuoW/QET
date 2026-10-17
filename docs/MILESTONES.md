@@ -73,16 +73,30 @@ Goal: the end-to-end pipeline works and is provably consistent before any expens
   2 passed, bf16 batch invariance worst |delta log pi| = 0 over 24 pairs (Qwen2.5-0.5B-Instruct); `make lint` →
   exit 0; spec-reviewer: no blocking findings, S1-S3 fixed in 6e854c8, the all-ones mask of note N1 reverted in
   c21333c after job 87769.gaas measured 0.50 nats of bf16 batch dependence (D-024b); commit c21333c (work: cf5641e)
-- [ ] **E1.3 Two-pass trainer** (`train/trainer.py`, `train/methods.py`; LoRA via PEFT with dropout 0). Accept:
+- [x] **E1.3 Two-pass trainer** (`train/trainer.py`, `train/methods.py`; LoRA via PEFT with dropout 0). Accept:
   (a) on a tiny random-weight model in float64 on CPU, the two-pass gradient equals the autograd gradient of the
   objective through the lattice for configurations 5 and 6, and of the logged objective with state weights held
   constant for configurations 3 and 4 (max relative difference < 1e-8); (b) a torch table policy reproduces
   `reference/fixtures/toy_training.json` within 1e-6 using the production weight code; (c) the logged objective is
   Σ μ(−log B), not the pass-2 loss; (d) no optimizer step between passes (assert parameter hash).
-- [ ] **E1.4 Inference agent** (`infer/agent.py`; HF generate for tests, vLLM for scale). Accept: a scripted
+  evidence: `pytest tests/train/test_trainer.py -q -m ""` → 38 passed (a: two-pass gradient = autograd for 3, 4, 5, 6
+  and a4 with the sub-lattice and n = 0, 1, relative difference < 1e-8; b: toy_training.json within 1e-6 through the
+  production weights and train_step; c: logged objective = Σ μ(−log B) < pass-2 loss; d: parameter hashes equal
+  within each of 3 steps for foreach and fused AdamW, and in-place, .data and optimizer-step updates between the
+  passes refused; all ten configurations' logged objectives equal the oracle's; one earlier run of this file had
+  one unidentified failure, not reproduced in 4 reruns); `make lint` → exit 0; spec-reviewer: no blocking findings
+  (review of e6cff1b, follow-up of b0078b8: S1-S7 fixed; F1, F2 fixed in 352d36d; Q17 opened); commit 352d36d
+  (work: e6cff1b, b0078b8)
+- [x] **E1.4 Inference agent** (`infer/agent.py`; HF generate for tests, vLLM for scale). Accept: a scripted
   policy that follows a random legal order on the toy environment succeeds 100% and, at every step, sees a prompt
   whose sha256 equals the training prompt of that state; invalid actions end the episode (D-006); greedy and
   8-sample decoding both run.
+  evidence: `pytest tests/infer/test_agent.py -q -m "not gpu"` → 22 passed (24 toy tasks × 5 random legal orders
+  succeed 100% and every step's prompt sha256 equals the training prompt of its state, also for the chronological
+  and native renderers along the demo order; 13 kinds of invalid output end the episode after one step without an
+  environment call; the budget; a resumed prefix; greedy and 8-sample decoding run and are reproducible; decoding
+  log-probability = scorer's within 1e-9); `pytest -m gpu` in PBS job 87789.gaas at c21333c → the Qwen2.5-0.5B
+  decoding test passed (5 toy tasks × greedy + 8 samples); `make lint` → exit 0; commit b9e8810
 - [x] **E1.5 Toy environment** (`envs/toy.py`): seeded random function DAG tasks (integer values, hidden
   intermediates, distractors, wrong inputs → seeded random outputs) plus a stateful variant (account read / pay,
   orders) that exercises effect and decision edges. Accept: gold replay scores 100%; Compile on toy demos has
