@@ -253,5 +253,9 @@ def test_batch_and_padding_invariance_in_bf16_on_gpu():
     assert worst <= 1e-4
     full, _ = score(model.float(), pairs, pad_id=fmt.eot_id, max_tokens=4096)  # the same weights in float32
     gap = max(abs(a - b) for a, b in zip(alone, full, strict=True))
-    print(f"bf16 vs float32 scores: worst |delta log pi| = {gap:.3g}, mean log pi = {sum(full) / len(full):.3f}")
-    assert gap < 1.0  # a gross error (a wrong dtype path, a different function) shows up as nats
+    rel = max(abs(a - b) / abs(b) for a, b in zip(alone, full, strict=True))
+    print(f"bf16 vs float32 scores: worst |delta log pi| = {gap:.3g} (relative {rel:.3g}), "
+          f"mean log pi = {sum(full) / len(full):.3f}")  # fmt: skip
+    # bf16 rounding alone moved scores by up to 0.9 nats, 2.9% of a mean -30.7 (job 87789.gaas), so an absolute bound
+    # cannot separate it from a wrong dtype path; a different function (wrong prompt, wrong targets) is off by far more
+    assert rel < 0.1
