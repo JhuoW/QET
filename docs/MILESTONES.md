@@ -124,8 +124,13 @@ Goal: the end-to-end pipeline works and is provably consistent before any expens
   every number traced to results/raw/, no mismatches, no blocking issues (notes in D-025); no claims drawn
 
 ## M1 — FuncBenchGen + ToolHop (EVAL_PLAN §3.1–3.2)
-- [ ] **M1.1 Adapter**: FuncBenchGen pinned in `third_party/`; task → x; step; success check; call cap; error
+- [x] **M1.1 Adapter**: FuncBenchGen pinned in `third_party/`; task → x; step; success check; call cap; error
   taxonomy. Accept: gold replay 100%; wrong-input behaviour matches the repo; tests.
+  evidence: `pytest tests/envs/test_funcbenchgen.py -q` → 8 passed (gold replay 100% in 4 grid cells × 15 graphs ×
+  3 random topological orders of the true DAG; observations equal the repository evaluator's results call by call
+  over 40 mixed calls, "value not yet known" and "incorrect value" included; success needs the minimum number of
+  calls; tasks deterministic, the global RNG untouched; pure contracts); third_party/FuncBenchGen pinned at
+  0729e25 (submodule, unmodified); `make lint` → exit 0; commit 7f3ba9d
 - [ ] **M1.2 Manifests**: frozen grid configuration, training seeds disjoint from test seeds, held-out larger and
   renamed sets, stateful extension; hashes recorded in DECISIONS.md.
 - [ ] **M1.3 Demonstrations and compile** (D-007): one executed successful trace per training graph; compile;
