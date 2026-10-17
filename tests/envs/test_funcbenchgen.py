@@ -124,6 +124,7 @@ def test_public_task_and_contracts():
     assert all(c == {"reads": [], "writes": []} for c in env.contracts().values())
 
 
+@pytest.mark.slow  # starts interpreters or compiles a 120-task sample
 def test_tasks_are_the_same_under_any_hash_seed():
     """FuncBenchGen's generator depends on string hashing; the adapter builds its graphs under PYTHONHASHSEED=0."""
     import os

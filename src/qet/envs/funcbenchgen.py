@@ -54,11 +54,14 @@ def _repo():
         if loaded is not None and not str(getattr(loaded, "__file__", "")).startswith(src):
             raise RuntimeError(f"another module named {name!r} is already imported ({loaded!r})")
     sys.modules.setdefault("litellm", types.SimpleNamespace(completion=None))
-    import evaluator
-    import funcbenchgen
-    import function_tree
-    import utils
-
+    writes, sys.dont_write_bytecode = sys.dont_write_bytecode, True  # no __pycache__ inside third_party/
+    try:
+        import evaluator
+        import funcbenchgen
+        import function_tree
+        import utils
+    finally:
+        sys.dont_write_bytecode = writes
     return funcbenchgen, function_tree, evaluator, utils
 
 
@@ -166,7 +169,8 @@ def graph_payloads(items: list[tuple[GridConfig, int]]) -> list[dict[str, Any]]:
     elif missing:
         request = json.dumps([[dataclasses.asdict(c), s] for c, s in missing])
         done = subprocess.run([sys.executable, "-m", "qet.envs.funcbenchgen"], input=request, capture_output=True,
-                              text=True, check=True, env={**os.environ, "PYTHONHASHSEED": "0"})  # fmt: skip
+                              text=True, check=True,
+                              env={**os.environ, "PYTHONHASHSEED": "0", "PYTHONDONTWRITEBYTECODE": "1"})  # fmt: skip
         for (c, s), graph in zip(missing, json.loads(done.stdout), strict=True):
             _GRAPHS[(c.tag(), s)] = graph
     return [copy.deepcopy(_GRAPHS[(c.tag(), s)]) for c, s in items]

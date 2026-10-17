@@ -27,6 +27,7 @@ def compiled():
     return [compile_trace(t, FuncBenchGenEnv, demo_seed=0, audit_orders=8) for t in m1_tasks(sample("train", 120))]
 
 
+@pytest.mark.slow  # starts interpreters or compiles a 120-task sample
 def test_every_true_constraint_survives_the_audit(compiled):
     for c in compiled:
         assert c.audit_final["recall_by_reachability"] == 1.0 and c.audit_final["unsafe_order_rate"] == 0.0, (
@@ -37,6 +38,7 @@ def test_every_true_constraint_survives_the_audit(compiled):
         assert c.record.compile.fallback_to_chain == missed and c.replayed == 8 + c.raw.n
 
 
+@pytest.mark.slow  # starts interpreters or compiles a 120-task sample
 def test_compile_sees_no_task_constraints_and_records_its_audit(compiled):
     for c in compiled:
         assert all("task" not in e.labels for e in c.raw.edges)  # D-020a: no true edge reaches Compile

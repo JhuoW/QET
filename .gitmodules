@@ -1,3 +1,4 @@
 [submodule "third_party/FuncBenchGen"]
 	path = third_party/FuncBenchGen
 	url = https://github.com/megagonlabs/FuncBenchGen
+	ignore = untracked
