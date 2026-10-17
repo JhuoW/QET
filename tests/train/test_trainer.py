@@ -489,3 +489,44 @@ def test_members_of_a_state_give_the_demo_order_history(fmt, recs):
     """Each state's prompt renders the demo steps of the state in demo order (a legal history)."""
     pk = builder(fmt, "6").build(recs[0])
     assert all(members(s) == sorted(members(s)) for s in pk.lat.states)
+
+
+def test_non_finite_parameters_are_reported_as_such(fmt, recs):
+    scorer = LMScorer(lm(13), pad_id=fmt.eot_id)
+    with torch.no_grad():
+        scorer.parameters()[0].view(-1)[0] = float("nan")
+    with pytest.raises(RuntimeError, match="non-finite trainable parameters"):
+        train_step(scorer, [builder(fmt, "2").build(recs[0])], method("2"))
+
+
+@pytest.mark.slow  # about 15 s of tiny-model steps
+def test_train_loop_rules_without_peft(fmt, recs):
+    """D-023e, f, j on a plain tiny model: warm-up over the run's own tokens, fractions already passed by the starting
+    tokens skipped, the B+ diagnostic outside the budget, no "final" once the budget is reached."""
+    scorer = LMScorer(lm(11), pad_id=fmt.eot_id)
+    budget, start = 200_000, 60_000
+    cfg = TrainConfig(
+        token_budget=budget, batch_graphs=2, lr=1e-3, warmup=0.03, seed=0, plus=True, tokens_at_start=start
+    )
+    rows, ckpts = [], []
+    opt = torch.optim.AdamW(scorer.parameters(), lr=cfg.lr)
+    summary = train(scorer, builder(fmt, "6"), recs, cfg, opt, on_step=rows.append,
+                    on_checkpoint=lambda label, row: ckpts.append(label))  # fmt: skip
+    assert ckpts == ["frac-0.5", "frac-0.75", "frac-1"]
+    used = start
+    for row in rows:
+        assert row["lr"] == lr_at((used - start) / (budget - start), cfg.lr, cfg.warmup)
+        used += row["scored"]["tokens"] + row["gradient"]["tokens"]
+        assert row["tokens_used"] == used
+    assert rows[0]["lr"] == 0.0 and summary["tokens_used"] == used >= budget > rows[-2]["tokens_used"]
+    assert summary["diagnostic"]["tokens"] > 0  # scored for the B+ bound, but not part of tokens_used
+    with pytest.raises(ValueError, match="budget left"):
+        train(scorer, builder(fmt, "6"), recs, TrainConfig(token_budget=1000, tokens_at_start=-1), opt)
+
+
+def test_an_untrainable_graph_fails_before_any_forward_pass(fmt, recs):
+    scorer = Recording(lm(12), pad_id=fmt.eot_id)
+    no_k = PackBuilder(fmt, CONTRACTS, method("6"), run_seed=0)  # without K the wide graph has no lattice to train on
+    with pytest.raises(ValueError, match="more than 256 states"):
+        train(scorer, no_k, recs, TrainConfig(token_budget=10_000), torch.optim.SGD(scorer.parameters(), lr=0.1))
+    assert scorer.calls == []

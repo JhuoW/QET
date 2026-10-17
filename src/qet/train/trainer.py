@@ -255,6 +255,8 @@ def train_step(
     guard = optimizer.register_step_pre_hook(_no_step_between_passes) if optimizer is not None else None
     try:
         before = _param_state(params)
+        if not all(math.isfinite(x) for x in before[1]):  # NaN would also defeat the change check below
+            raise RuntimeError("non-finite trainable parameters before pass 1")
         t0 = time.perf_counter()
 
         # Pass 1: score without gradients (eval mode is asserted by the scorer).
@@ -267,12 +269,14 @@ def train_step(
             logp1 = [{} for _ in packs]
             for (g, e), x in zip(items1, values.tolist(), strict=True):
                 logp1[g][e] = x
-            extra = [(g, e) for g, pk in enumerate(packs) for e in outside_edges(pk)] if plus else []
-            if extra and method.weights == "qet":
+        t1 = time.perf_counter()
+        if plus and method.weights == "qet":  # the B+ diagnostic, timed and counted apart from pass 1
+            extra = [(g, e) for g, pk in enumerate(packs) for e in outside_edges(pk)]
+            if extra:
                 values, diagnostic = scorer.logp(packs, extra, grad=False)
                 for (g, e), x in zip(extra, values.tolist(), strict=True):
                     logp1[g][e] = x
-        t1 = time.perf_counter()
+        t_diag = time.perf_counter()
 
         # Weights (the production code of every configuration), then the guard: no update since pass 1.
         ews: list[EdgeWeights] = [
@@ -336,7 +340,13 @@ def train_step(
         diagnostic=diagnostic,
         edges_scored=len(items1),
         edges_trained=len(items2),
-        seconds={"pass1": t1 - t0, "weights": t2 - t1, "pass2": t3 - t2, "update": t4 - t3},
+        seconds={
+            "pass1": t1 - t0,
+            "diagnostic": t_diag - t1,
+            "weights": t2 - t_diag,
+            "pass2": t3 - t2,
+            "update": t4 - t3,
+        },
         grad_norm=grad_norm,
         bplus_gap=gap,
         pass2_loss=loss_value,
@@ -384,7 +394,7 @@ def train(
     ids = [r.task_id for r in records]
     if len(set(ids)) != len(ids):
         raise ValueError("task ids must be unique: they key the prompt cache and the sub-lattice seed")
-    if not records or cfg.batch_graphs < 1 or cfg.tokens_at_start >= cfg.token_budget:
+    if not records or cfg.batch_graphs < 1 or not 0 <= cfg.tokens_at_start < cfg.token_budget:
         raise ValueError("training needs records, a positive batch size and budget left to spend")
     if builder.run_seed != cfg.seed:
         raise ValueError(f"the pack builder's run seed {builder.run_seed} is not the run's seed {cfg.seed}")

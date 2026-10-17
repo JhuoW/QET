@@ -266,13 +266,16 @@ usual step-based schedule. A run that starts from a warm-up checkpoint (D-010) s
 gets its own warm-up. Gradients are clipped at norm 1.0 for every configuration; AdamW. (f) The budget counts real
 tokens (prompts plus targets, padding excluded) of pass 1 and pass 2 (D-024a); the step that crosses the budget
 completes; a checkpoint is taken at the first step that reaches 25, 50, 75 and 100% of the budget (EVAL_PLAN §8), and
-a final one after an early stop. The optional B+ diagnostic (QET runs only) scores the actions that leave S outside
-the budget and logs its tokens separately. (g) Each epoch visits the records in a seeded shuffle; the last batch of
+a final one after an early stop; fractions already passed by the tokens a run starts with (a format warm-up longer
+than 25% of the budget) are skipped, and the warm-up checkpoint stands in for them on the compute curves. The
+optional B+ diagnostic (QET runs only) scores the actions that leave S outside the budget and logs its tokens and
+time separately. (g) Each epoch visits the records in a seeded shuffle; the last batch of
 an epoch may be smaller, and pass 2 normalizes by its own number of graphs (D-014). (h) Guard against an update
 between the passes: an optimizer step pre-hook raises from the start of pass 1 to the end of pass 2, and each
-trainable parameter's storage, in-place version counter and float64 checksum are compared before pass 1, before
-pass 2 and after it (the checksum catches fused optimizers and writes through `.data`, which leave the version
-counter alone). Gradients are cleared at the start of every step. (i) The pass-2 loss value is returned for tests
+trainable parameter's storage, in-place version counter and float64 checksum are compared before pass 1 and
+before pass 2, and the checksums again after pass 2 (the checksum catches fused optimizers and writes through
+`.data`, which leave the version counter alone); non-finite parameters raise their own error before pass 1.
+Gradients are cleared at the start of every step. (i) The pass-2 loss value is returned for tests
 only; nothing logs it (SPEC §6.5). (j) The pack builder's run seed must be the run's seed, so the three seeds of a
 configuration sample different sub-lattices; `train` builds the epoch-0 packs before the first step, so a graph that
 cannot be trained on (more than S_max states without K, a refused target) fails before compute is spent. Default: as
