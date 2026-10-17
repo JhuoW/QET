@@ -79,19 +79,21 @@ class PackBuilder:
         contracts: Contracts | Mapping[str, Any] | None,
         method: Method,
         *,
+        run_seed: int,
         truncation: Mapping[str, Any] | Truncation | None = None,
         k: int | None = None,
         s_max: int = S_MAX,
-        run_seed: int = 0,
-        plus: bool = False,
     ):
+        """`run_seed` seeds the sub-lattices with (graph id, epoch); `train` requires it to be the run's seed. `k` is
+        the number of sampled orders: of the sub-lattice above S_max (configurations 3-6), of every graph's
+        sub-lattice (a4), or of the marginalized paths (a3, default K = 4)."""
         if method.force_sublattice and k is None:
             raise ValueError(f"configuration {method.config_id} needs the number of sub-lattice orders K")
         self.fmt = fmt
         self.contracts = as_contracts(contracts)
         self.method = method
         self.truncation = Truncation.from_json(truncation)
-        self.k, self.s_max, self.run_seed, self.plus = k, s_max, run_seed, plus
+        self.k, self.s_max, self.run_seed = k, s_max, run_seed
         self._prompts: dict[tuple[str, int], tuple[int, ...]] = {}
         self._targets: dict[tuple[str, int], tuple[int, ...]] = {}
 
@@ -105,8 +107,8 @@ class PackBuilder:
                 order = canonical_order(preds, [key for _, key in name_calls((nd.tool, nd.args) for nd in rec.nodes)])
             return lattice_from_states(n, preds, prefix_states(order)), order, None
         seed = sublattice_seed(rec.task_id, epoch, self.run_seed)  # shared by configurations 3-6 and a4 (D-013)
-        if m.lattice == "paths":
-            paths = sample_orders(n, preds, m.paths, seed)
+        if m.lattice == "paths":  # a3: K from the run config like a4, so equal K gives a4's orders (D-023b)
+            paths = sample_orders(n, preds, self.k if self.k is not None else m.paths, seed)
             return sublattice(n, preds, paths), None, paths
         if self.k is None:
             lat = full_lattice(n, preds, cap=self.s_max)
@@ -128,10 +130,8 @@ class PackBuilder:
                 msgs = render_messages(task, history, self.contracts, self.method.renderer, self.truncation)
                 self._prompts[key] = tuple(self.fmt.prompt_ids(msgs))
             pack.prompt_ids[s] = self._prompts[key]
-        nodes = {v for _, v in lat.edges}
-        if self.plus:
-            nodes |= {v for s in lat.states for v in lat.outside[s]}
-        for v in sorted(nodes):
+        # Every node lies on an edge inside S (S holds complete orders), so these targets also cover the B+ diagnostic.
+        for v in sorted({v for _, v in lat.edges}):
             key = (rec.task_id, v)
             if key not in self._targets:
                 tool, args = (
@@ -200,30 +200,39 @@ class StepResult:
     objectives: list[float]  # per graph
     scored: TokenCounts  # pass 1
     gradient: TokenCounts  # pass 2
+    diagnostic: TokenCounts  # the B+ diagnostic's extra scoring; not part of the training budget
     edges_scored: int
     edges_trained: int
     seconds: dict[str, float]
     grad_norm: float | None
-    bplus_gap: list[float] | None  # per graph, plus=True: sum of mu * (log B+ - log B_S), the objective error bound
+    bplus_gap: list[float] | None  # per graph, qet with plus=True: sum of mu * (log B+ - log B_S), the error bound
     pass2_loss: float  # for tests only: never logged, never used for early stopping or selection (SPEC §6.5)
 
 
-def pass1_edges(pack: LatticePack, method: Method, plus: bool = False) -> list[EdgeKey]:
-    """The edges whose log pi the weights need: the paths for sampled_paths, else every edge inside S, plus the
-    ready actions leaving S for the B+ diagnostic (SPEC §6.6)."""
+def pass1_edges(pack: LatticePack, method: Method) -> list[EdgeKey]:
+    """The edges whose log pi the weights need: the paths for sampled_paths, else every edge inside S."""
     lat = pack.lat
     if method.weights == "sampled_paths":
         on_paths = {e for p in pack.paths or () for e in path_edges(p)}
         return [e for e in lat.edges if e in on_paths]
-    edges = list(lat.edges)
-    if plus:
-        edges += [(s, v) for s in lat.states for v in lat.outside[s]]
-    return edges
+    return list(lat.edges)
 
 
-def _param_state(params: Sequence[torch.Tensor]) -> list[tuple[int, int]]:
-    """Storage and in-place version counter of each parameter: an optimizer step changes the versions."""
-    return [(p.data_ptr(), p._version) for p in params]
+def outside_edges(pack: LatticePack) -> list[EdgeKey]:
+    """The ready actions that leave S, scored only for the B+ diagnostic (SPEC §6.6)."""
+    return [(s, v) for s in pack.lat.states for v in pack.lat.outside[s]]
+
+
+def _param_state(params: Sequence[torch.Tensor]) -> tuple[list[tuple[int, int]], list[float]]:
+    """Storage and in-place version counter of each trainable parameter, and a float64 checksum of its values: the
+    versions catch in-place updates, the checksums also catch fused optimizers and writes through `.data`."""
+    pointers = [(p.data_ptr(), p._version) for p in params]
+    sums = torch.stack([p.detach().double().sum() for p in params]).tolist() if params else []
+    return pointers, sums
+
+
+def _no_step_between_passes(optimizer: torch.optim.Optimizer, args: Any, kwargs: Any) -> None:
+    raise RuntimeError("optimizer step between pass 1 and pass 2 (SPEC §6.5)")
 
 
 def train_step(
@@ -235,52 +244,69 @@ def train_step(
     plus: bool = False,
     max_grad_norm: float | None = None,
 ) -> StepResult:
-    """One step of Algorithm 1 on a batch of packs. Without an optimizer the gradients stay in `.grad`."""
+    """One step of Algorithm 1 on a batch of packs. Gradients start from zero; without an optimizer they stay in
+    `.grad`. With plus=True, QET steps also score the actions that leave S and log the B+ bound (not budgeted)."""
     if not packs:
         raise ValueError("a step needs at least one graph")
     n_graphs = len(packs)
     params = scorer.parameters()
-    before = _param_state(params)
-    t0 = time.perf_counter()
+    for p in params:
+        p.grad = None  # no gradient left over from an earlier call
+    guard = optimizer.register_step_pre_hook(_no_step_between_passes) if optimizer is not None else None
+    try:
+        before = _param_state(params)
+        t0 = time.perf_counter()
 
-    # Pass 1: score without gradients (eval mode is asserted by the scorer).
-    logp1: list[dict[EdgeKey, float] | None] = [None] * n_graphs
-    scored = TokenCounts()
-    items1: list[Item] = []
-    if method.pass1:
-        items1 = [(g, e) for g, pk in enumerate(packs) for e in pass1_edges(pk, method, plus)]
-        values, scored = scorer.logp(packs, items1, grad=False)
-        logp1 = [{} for _ in packs]
-        for (g, e), x in zip(items1, values.tolist(), strict=True):
-            logp1[g][e] = x
-    t1 = time.perf_counter()
+        # Pass 1: score without gradients (eval mode is asserted by the scorer).
+        logp1: list[dict[EdgeKey, float] | None] = [None] * n_graphs
+        scored, diagnostic = TokenCounts(), TokenCounts()
+        items1: list[Item] = []
+        if method.pass1:
+            items1 = [(g, e) for g, pk in enumerate(packs) for e in pass1_edges(pk, method)]
+            values, scored = scorer.logp(packs, items1, grad=False)
+            logp1 = [{} for _ in packs]
+            for (g, e), x in zip(items1, values.tolist(), strict=True):
+                logp1[g][e] = x
+            extra = [(g, e) for g, pk in enumerate(packs) for e in outside_edges(pk)] if plus else []
+            if extra and method.weights == "qet":
+                values, diagnostic = scorer.logp(packs, extra, grad=False)
+                for (g, e), x in zip(extra, values.tolist(), strict=True):
+                    logp1[g][e] = x
+        t1 = time.perf_counter()
 
-    # Weights (the production code of every configuration), then the guard: no update since pass 1.
-    ews: list[EdgeWeights] = [
-        edge_weights(method.weights, pk.lat, logp1[g], lam=method.lam, order=pk.order, paths=pk.paths)
-        for g, pk in enumerate(packs)
-    ]
-    if _param_state(params) != before:
-        raise RuntimeError("parameters changed between pass 1 and pass 2 (SPEC §6.5)")
-    t2 = time.perf_counter()
+        # Weights (the production code of every configuration), then the guard: no update since pass 1.
+        ews: list[EdgeWeights] = [
+            edge_weights(method.weights, pk.lat, logp1[g], lam=method.lam, order=pk.order, paths=pk.paths)
+            for g, pk in enumerate(packs)
+        ]
+        if _param_state(params) != before:
+            raise RuntimeError("parameters changed between pass 1 and pass 2 (SPEC §6.5)")
+        t2 = time.perf_counter()
 
-    # Pass 2: weighted SFT on the edges with non-zero weight, weights detached, averaged over graphs (D-014).
-    items2 = [(g, e) for g, (pk, ew) in enumerate(zip(packs, ews, strict=True)) for e in pk.lat.edges if ew.weights[e]]
-    w2 = torch.tensor([ews[g].weights[e] for g, e in items2], dtype=torch.float64)
-    logp2: list[dict[EdgeKey, float]] = [{} for _ in packs]
-    gradient = TokenCounts()
-    loss_value = 0.0
-    for mb in scorer.micro_batches(packs, items2):
-        batch = [items2[i] for i in mb]
-        lp, counts = scorer.logp(packs, batch, grad=True)
-        loss = -(w2[mb].to(lp.device) * lp).sum() / n_graphs
-        loss.backward()
-        loss_value += loss.item()
-        gradient += counts
-        for (g, e), x in zip(batch, lp.detach().tolist(), strict=True):
-            logp2[g][e] = x
-    t3 = time.perf_counter()
-    gradient.seconds = t3 - t2
+        # Pass 2: weighted SFT on the edges with non-zero weight, weights detached, averaged over graphs (D-014).
+        items2 = [
+            (g, e) for g, (pk, ew) in enumerate(zip(packs, ews, strict=True)) for e in pk.lat.edges if ew.weights[e]
+        ]
+        w2 = torch.tensor([ews[g].weights[e] for g, e in items2], dtype=torch.float64)
+        logp2: list[dict[EdgeKey, float]] = [{} for _ in packs]
+        gradient = TokenCounts()
+        loss_value = 0.0
+        for mb in scorer.micro_batches(packs, items2):
+            batch = [items2[i] for i in mb]
+            lp, counts = scorer.logp(packs, batch, grad=True)
+            loss = -(w2[mb].to(lp.device) * lp).sum() / n_graphs
+            loss.backward()
+            loss_value += loss.item()
+            gradient += counts
+            for (g, e), x in zip(batch, lp.detach().tolist(), strict=True):
+                logp2[g][e] = x
+        if _param_state(params)[1] != before[1]:
+            raise RuntimeError("parameters changed during pass 2 (SPEC §6.5)")
+        t3 = time.perf_counter()
+        gradient.seconds = t3 - t2
+    finally:
+        if guard is not None:
+            guard.remove()
 
     # The configuration's logged objective: from pass 1 when the weights used it, else from pass 2 (SPEC §8).
     objectives = [
@@ -307,6 +333,7 @@ def train_step(
         objectives=objectives,
         scored=scored,
         gradient=gradient,
+        diagnostic=diagnostic,
         edges_scored=len(items1),
         edges_trained=len(items2),
         seconds={"pass1": t1 - t0, "weights": t2 - t1, "pass2": t3 - t2, "update": t4 - t3},
@@ -317,13 +344,14 @@ def train_step(
 
 
 # ----------------------------------------------------------------------------- the training loop
-def lr_at(fraction: float, peak: float, warmup: float) -> float:
-    """Linear warm-up over the first `warmup` of the token budget, then cosine decay to 0 at the end (D-009). The
-    schedule follows the budget, not the step count, because configurations without pass 1 take more steps."""
-    if warmup > 0.0 and fraction < warmup:
-        return peak * fraction / warmup
-    progress = min(1.0, (fraction - warmup) / (1.0 - warmup)) if warmup < 1.0 else 1.0
-    return peak * 0.5 * (1.0 + math.cos(math.pi * progress))
+def lr_at(progress: float, peak: float, warmup: float) -> float:
+    """Linear warm-up over the first `warmup` of the run's own tokens, then cosine decay to 0 at the budget (D-009,
+    D-023e). The schedule follows tokens, not steps, because configurations without pass 1 take more steps; it spans
+    the run's own tokens because a run that starts from a warm-up checkpoint starts with a fresh optimizer."""
+    if warmup > 0.0 and progress < warmup:
+        return peak * progress / warmup
+    rest = min(1.0, (progress - warmup) / (1.0 - warmup)) if warmup < 1.0 else 1.0
+    return peak * 0.5 * (1.0 + math.cos(math.pi * rest))
 
 
 @dataclass(frozen=True)
@@ -331,10 +359,10 @@ class TrainConfig:
     token_budget: int  # scored + gradient tokens of the configuration, warm-up included (EVAL_PLAN §8)
     batch_graphs: int = 8
     lr: float = 1e-4
-    warmup: float = 0.03  # fraction of the token budget
+    warmup: float = 0.03  # fraction of the run's own tokens
     max_grad_norm: float | None = 1.0
-    seed: int = 0
-    plus: bool = False
+    seed: int = 0  # the epoch order and, through the pack builder, the sub-lattices
+    plus: bool = False  # the B+ diagnostic of QET runs (scored outside the budget)
     checkpoint_fractions: tuple[float, ...] = (0.25, 0.5, 0.75, 1.0)
     tokens_at_start: int = 0  # tokens already spent, e.g. by the format warm-up of the parent checkpoint (D-010)
     max_steps: int | None = None  # a hard stop (tests, smoke runs)
@@ -351,16 +379,22 @@ def train(
     on_checkpoint: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Epochs over the records in a seeded order until the token budget is spent. `on_step` receives one log row per
-    step; `on_checkpoint` is called at each budget fraction ("frac-0.25", ...) and, after an early stop, "final"."""
+    step; `on_checkpoint` is called at each budget fraction ("frac-0.25", ...) and, after an early stop, "final".
+    The epoch-0 packs are built first, so a graph that cannot be trained on fails before any compute is spent."""
     ids = [r.task_id for r in records]
     if len(set(ids)) != len(ids):
         raise ValueError("task ids must be unique: they key the prompt cache and the sub-lattice seed")
-    if not records or cfg.token_budget <= 0 or cfg.batch_graphs < 1:
-        raise ValueError("training needs records, a positive token budget and a positive batch size")
+    if not records or cfg.batch_graphs < 1 or cfg.tokens_at_start >= cfg.token_budget:
+        raise ValueError("training needs records, a positive batch size and budget left to spend")
+    if builder.run_seed != cfg.seed:
+        raise ValueError(f"the pack builder's run seed {builder.run_seed} is not the run's seed {cfg.seed}")
+    for r in records:
+        builder.build(r, 0)
     rng = random.Random(cfg.seed)
     used, step, epoch = cfg.tokens_at_start, 0, 0
-    pending = sorted(cfg.checkpoint_fractions)
-    totals = {"scored": TokenCounts(), "gradient": TokenCounts()}
+    span = cfg.token_budget - cfg.tokens_at_start
+    pending = sorted(f for f in cfg.checkpoint_fractions if f * cfg.token_budget > used)
+    totals = {"scored": TokenCounts(), "gradient": TokenCounts(), "diagnostic": TokenCounts()}
     row: dict[str, Any] = {}
 
     def done() -> bool:
@@ -371,14 +405,14 @@ def train(
         rng.shuffle(order)
         for start in range(0, len(order), cfg.batch_graphs):
             packs = [builder.build(records[j], epoch) for j in order[start : start + cfg.batch_graphs]]
-            lr = lr_at(used / cfg.token_budget, cfg.lr, cfg.warmup)
+            lr = lr_at((used - cfg.tokens_at_start) / span, cfg.lr, cfg.warmup)
             for group in optimizer.param_groups:
                 group["lr"] = lr
             res = train_step(scorer, packs, builder.method, optimizer, plus=cfg.plus, max_grad_norm=cfg.max_grad_norm)
-            used += res.scored.tokens + res.gradient.tokens
+            used += res.scored.tokens + res.gradient.tokens  # the diagnostic is not part of the budget
             step += 1
-            totals["scored"] += res.scored
-            totals["gradient"] += res.gradient
+            for key in totals:
+                totals[key] += getattr(res, key)
             row = {
                 "step": step,
                 "epoch": epoch,
@@ -388,6 +422,7 @@ def train(
                 "objectives": res.objectives,
                 "scored": res.scored.to_json(),
                 "gradient": res.gradient.to_json(),
+                "diagnostic": res.diagnostic.to_json(),
                 "tokens_used": used,
                 "budget_fraction": used / cfg.token_budget,
                 "edges_scored": res.edges_scored,
@@ -407,13 +442,12 @@ def train(
             if done():
                 break
         epoch += 1
-    if pending and on_checkpoint:
+    if pending and step and on_checkpoint:
         on_checkpoint("final", row)
     return {
         "steps": step,
         "epochs_started": epoch,
         "tokens_used": used,
-        "scored": totals["scored"].to_json(),
-        "gradient": totals["gradient"].to_json(),
+        **{key: counts.to_json() for key, counts in totals.items()},
         "last": row,
     }

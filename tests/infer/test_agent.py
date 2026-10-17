@@ -40,7 +40,7 @@ def test_legal_orders_succeed_and_see_the_training_prompt_of_every_state(fmt):
     rng = random.Random(0)
     for toy in toys():
         record, _ = compile_toy(toy)
-        pack = PackBuilder(fmt, toy.contracts, method("6")).build(record)
+        pack = PackBuilder(fmt, toy.contracts, method("6"), run_seed=0).build(record)
         training = {s: prompt_sha256(ids) for s, ids in pack.prompt_ids.items()}
         masks = node_masks(record.n, record.preds())
         for _ in range(5):
@@ -59,7 +59,7 @@ def test_order_sensitive_renderers_see_their_training_prompts_along_the_demo_ord
     m = method(config_id)
     for toy in toys()[:6] + toys()[12:18]:
         record, _ = compile_toy(toy)
-        pack = PackBuilder(fmt, toy.contracts, m).build(record)
+        pack = PackBuilder(fmt, toy.contracts, m, run_seed=0).build(record)
         order = list(range(record.n))
         episode = run_episode(ToyEnv(toy), ScriptedPolicy(fmt, actions_for(record, order)), fmt, renderer=m.renderer)
         assert episode.success

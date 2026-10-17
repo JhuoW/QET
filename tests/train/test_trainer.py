@@ -58,7 +58,7 @@ def finish(answer):
 
 def records():
     """Fan-in (three independent prices, then a booking: 9 states), a chain beside an independent call (6 states),
-    a task with no calls, and nine independent calls (512 states > S_max: the sub-lattice)."""
+    a task with no calls, nine independent calls (512 states > S_max: the sub-lattice) and a single call."""
     fan_in = [
         step("get_price", {"from": "NYC", "to": "SG"}, {"price": 1200}),
         step("get_price", {"from": "NYC", "to": "LA"}, {"price": 300}),
@@ -78,6 +78,7 @@ def records():
         ("chain", "Find the orders of ann and the weather in Paris.", chain),
         ("empty", "Say hello.", [finish("hello")]),
         ("wide", "Get prices from NYC to " + ", ".join(CITIES) + ".", wide + [finish(108)]),
+        ("single", "Weather in Paris.", [step("get_weather", {"city": "Paris"}, {"temp": 21}), finish(21)]),
     ]
     return [compile_demo({"request": req, "tools": TOOLS}, demo, CONTRACTS, task_id=tid) for tid, req, demo in cases]
 
@@ -94,7 +95,7 @@ def recs():
 
 def test_the_test_graphs_have_the_intended_shapes(recs):
     sizes = [None if (lat := full_lattice(r.n, r.preds(), cap=256)) is None else len(lat.states) for r in recs]
-    assert sizes == [9, 6, 1, None]
+    assert sizes == [9, 6, 1, None, 2]
 
 
 def lm(seed=0):
@@ -164,7 +165,10 @@ def test_two_pass_gradient_equals_the_autograd_gradient(fmt, recs, config_id):
         for pk, lp in zip(packs, lps, strict=True)
     ]
     auto = torch.autograd.grad(autograd_objective(config_id, packs, lps, ews), params)
-    worst = max(((a - t).abs().max() / t.abs().max()).item() for a, t in zip(two_pass, auto, strict=True))
+    worst = 0.0
+    for a, t in zip(two_pass, auto, strict=True):  # relative to each tensor's largest entry; all-zero tensors absolute
+        scale = t.abs().max()
+        worst = max(worst, ((a - t).abs().max() / scale).item() if scale > 0 else a.abs().max().item())
     assert worst < 1e-8, worst
 
 
@@ -278,33 +282,109 @@ class Recording(LMScorer):
         return super().logp(packs, items, grad=grad)
 
 
-def test_no_parameter_update_between_the_passes(fmt, recs):
+@pytest.mark.parametrize("fused", [False, True])
+def test_no_parameter_update_between_the_passes(fmt, recs, fused):
     model = lm(2)
     scorer = Recording(model, pad_id=fmt.eot_id, max_tokens=1500)  # several pass-2 micro-batches
     packs = [builder(fmt, "6").build(r) for r in recs[:2]]
-    opt = torch.optim.AdamW(scorer.parameters(), lr=1e-2)
-    start = param_hash(scorer.parameters())
-    train_step(scorer, packs, method("6"), opt)
-    grads = [g for g, _ in scorer.calls]
-    assert grads[0] is False and grads.count(False) == 1 and grads.count(True) >= 2
-    assert {h for _, h in scorer.calls} == {start}  # pass 1 and every pass-2 micro-batch saw the same parameters
-    assert param_hash(scorer.parameters()) != start  # the one update comes after pass 2
+    opt = torch.optim.AdamW(scorer.parameters(), lr=1e-2, fused=fused, foreach=None if fused else True)
+    for _ in range(3):  # from the second step on, an optimizer step between the passes would have state to apply
+        scorer.calls.clear()
+        start = param_hash(scorer.parameters())
+        train_step(scorer, packs, method("6"), opt)
+        grads = [g for g, _ in scorer.calls]
+        assert grads[0] is False and grads.count(False) == 1 and grads.count(True) >= 2
+        assert {h for _, h in scorer.calls} == {start}  # pass 1 and every pass-2 micro-batch saw the same parameters
+        assert param_hash(scorer.parameters()) != start  # the one update comes after pass 2
 
 
 class Meddling(LMScorer):
+    """Changes a parameter right after pass 1: in place, through .data (no version bump), or by an optimizer step."""
+
+    how = "inplace"
+    optimizer = None
+
     def logp(self, packs, items, *, grad):
         out = super().logp(packs, items, grad=grad)
         if not grad:
-            with torch.no_grad():
-                self.parameters()[0].add_(1e-3)  # an update between the passes
+            p = self.parameters()[0]
+            if self.how == "inplace":
+                with torch.no_grad():
+                    p.add_(1e-3)
+            elif self.how == "data":
+                p.data.add_(1e-3)
+            else:
+                self.optimizer.step()
         return out
 
 
-def test_an_update_between_the_passes_is_refused(fmt, recs):
+@pytest.mark.parametrize("how", ["inplace", "data", "optimizer"])
+def test_an_update_between_the_passes_is_refused(fmt, recs, how):
     scorer = Meddling(lm(3), pad_id=fmt.eot_id)
+    scorer.how = how
+    scorer.optimizer = opt = torch.optim.AdamW(scorer.parameters(), lr=1e-2, fused=True)
     packs = [builder(fmt, "6").build(recs[0])]
     with pytest.raises(RuntimeError, match="between pass 1 and pass 2"):
-        train_step(scorer, packs, method("6"))
+        train_step(scorer, packs, method("6"), opt)
+
+
+def test_gradients_start_from_zero_each_step(fmt, recs):
+    scorer = LMScorer(lm(8), pad_id=fmt.eot_id)
+    packs = [builder(fmt, "2").build(recs[0])]
+    train_step(scorer, packs, method("2"))
+    first = [p.grad.clone() for p in scorer.parameters()]
+    train_step(scorer, packs, method("2"))
+    assert all(torch.equal(a, p.grad) for a, p in zip(first, scorer.parameters(), strict=True))
+
+
+def test_the_bplus_diagnostic_is_scored_for_qet_only_and_outside_the_budget(fmt, recs):
+    model = lm(7)
+    wide6, wide4 = builder(fmt, "6").build(recs[3]), builder(fmt, "4").build(recs[3])
+    plain = train_step(LMScorer(model, pad_id=fmt.eot_id), [wide6], method("6"))
+    diag = train_step(LMScorer(model, pad_id=fmt.eot_id), [wide6], method("6"), plus=True)
+    assert diag.scored.tokens == plain.scored.tokens and plain.diagnostic.tokens == 0 < diag.diagnostic.tokens
+    assert diag.objectives == pytest.approx(plain.objectives, rel=1e-12)
+    assert plain.bplus_gap is None and diag.bplus_gap[0] >= 0.0
+    four = train_step(LMScorer(model, pad_id=fmt.eot_id), [wide4], method("4"), plus=True)
+    assert four.diagnostic.tokens == 0 and four.bplus_gap is None
+
+
+def test_train_requires_the_builder_to_use_the_run_seed(fmt, recs):
+    scorer = LMScorer(lm(9), pad_id=fmt.eot_id)
+    opt = torch.optim.SGD(scorer.parameters(), lr=0.1)
+    with pytest.raises(ValueError, match="run seed"):
+        train(scorer, builder(fmt, "6", run_seed=0), recs, TrainConfig(token_budget=1000, seed=1), opt)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("config_id", sorted(METHODS))
+def test_every_configuration_logs_the_oracles_objective(fmt, recs, config_id):
+    """train_step against reference/qet_ref.summary for all ten configurations (SPEC §8's logged objective), epochs 0
+    and 1, the sub-lattice, n = 0 and n = 1 included, and the B+ bound of the QET configurations."""
+    import qet_ref as R
+
+    model = lm(10)
+    m = method(config_id)
+    b = builder(fmt, config_id, k=3)
+    for epoch in (0, 1):
+        packs = [b.build(r, epoch) for r in recs]
+        res = train_step(LMScorer(model, pad_id=fmt.eot_id), packs, m, plus=True)
+        for g, (pk, r) in enumerate(zip(packs, recs, strict=True)):
+            lat = pk.lat
+            edges = list(lat.edges) + [(s, v) for s in lat.states for v in lat.outside[s]]
+            values, _ = score(model, [pk.pair(e) for e in edges], pad_id=fmt.eot_id)
+            olp = {
+                (frozenset(members(s)), "end" if v == END else v): x for (s, v), x in zip(edges, values, strict=True)
+            }
+            states = [frozenset(members(s)) for s in lat.states]
+            kw = {"path_sft": {"order": pk.order}, "sampled_paths": {"paths": pk.paths}}.get(m.weights, {})
+            preds = [frozenset(p) for p in r.preds()]
+            exp = R.summary(m.weights, states=states, preds=preds, n=r.n, logp=olp, lam=m.lam, plus=True, **kw)
+            assert res.objectives[g] == pytest.approx(exp["objective"], rel=1e-9, abs=1e-12), (config_id, epoch, g)
+            if res.bplus_gap is not None:
+                mu = R.start_weights(states, r.n, m.lam)
+                gap = sum(mu[st] * (exp["logB_plus"][st] - exp["logB"][st]) for st in states if mu[st] > 0)
+                assert res.bplus_gap[g] == pytest.approx(gap, rel=1e-9, abs=1e-12)
 
 
 # ----------------------------------------------------------------------------- configurations share everything else
@@ -348,14 +428,15 @@ def test_path_sft_trains_the_demo_path_without_pass_1(fmt, recs):
 def test_ablations_build_their_states(fmt, recs):
     a2 = builder(fmt, "a2").build(recs[0])
     assert a2.order != list(range(4)) and a2.order[-1] == 3  # the canonical order sorts the three prices by key
-    a3 = builder(fmt, "a3").build(recs[3])
+    a3 = builder(fmt, "a3", k=None).build(recs[3])  # without a K from the run config, D-011's default K = 4
     assert len(a3.paths) == 4 and a3.paths[0] == list(range(9))
+    assert len(builder(fmt, "a3", k=8).build(recs[3]).paths) == 8  # a3 takes K from the run config (D-023b)
     res = train_step(LMScorer(lm(5), pad_id=fmt.eot_id), [a3], method("a3"))
     assert res.edges_scored == len({e for p in a3.paths for e in path_edges(p)})
     a4 = builder(fmt, "a4", k=2).build(recs[0])
     assert not a4.lat.exact  # a4 samples a sub-lattice even below S_max
     with pytest.raises(ValueError, match="K"):
-        PackBuilder(fmt, CONTRACTS, method("a4"))
+        PackBuilder(fmt, CONTRACTS, method("a4"), run_seed=0)
 
 
 def test_configurations_are_valid():
@@ -391,7 +472,7 @@ def test_train_spends_the_token_budget_and_checkpoints_at_fractions(fmt, recs):
     assert [label for label, _ in ckpts] == ["frac-0.25", "frac-0.5", "frac-0.75", "frac-1"]
     for (_, used), frac in zip(ckpts, (0.25, 0.5, 0.75, 1.0), strict=True):
         assert used >= frac * cfg.token_budget
-    assert all(set(r["graphs"]) <= {"fan-in", "chain", "empty", "wide"} for r in rows)
+    assert all(set(r["graphs"]) <= {"fan-in", "chain", "empty", "wide", "single"} for r in rows)
     assert rows[0]["lr"] == 0.0 and max(r["lr"] for r in rows) <= cfg.lr
     assert sum(r["scored"]["tokens"] + r["gradient"]["tokens"] for r in rows) == summary["tokens_used"]
     assert all(math.isfinite(r["objective"]) and r["objective"] > 0 for r in rows)

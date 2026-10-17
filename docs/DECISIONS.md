@@ -254,20 +254,28 @@ deterministic and identical in training and inference, but on Llama a message th
 ### D-023 Trainer details left open by SPEC §6.5, §8 and D-009
 `src/qet/train/methods.py`, `trainer.py`. (a) Ablation a4 samples the sub-lattice for every graph, not only above
 S_max, so "exact vs a4" (claim C5) compares the two on the same graphs; configurations 3-6 use the sub-lattice only
-above S_max, with the run's K (D-018a). (b) a3 resamples its K - 1 random orders every epoch with the sub-lattice
-seed (graph id, epoch, run seed), so with equal K they are the orders whose prefix sets form a4's S. (c) The path
+above S_max, with the run's K (D-018a). SPEC §8 read literally samples only above S_max: see Q17. (b) a3 takes K from
+the run config (default 4, D-011) and resamples its K - 1 random orders every epoch with the sub-lattice seed
+(graph id, epoch, run seed), so with equal K they are the orders whose prefix sets form a4's S. (c) The path
 configurations (1, 2, a1, a2) train on the prefix states of their order and run no pass 1; the order-sensitive
 renderers (1, a1) are allowed only with the demo order. (d) The prompt of a state renders the demo steps of that
 state in demo order (a legal history; Proposition 1 makes every legal order give the same quotient prompt). (e) The
-learning rate follows the spent fraction of the token budget, not the step count (configurations without pass 1 take
-more steps): linear warm-up over the first 3% of the budget, then cosine decay to 0 at the budget; the first step has
-learning rate 0, as in the usual step-based schedule. Gradients are clipped at norm 1.0 for every configuration;
-AdamW. (f) The budget counts real tokens (prompts plus targets, padding excluded) of pass 1 and pass 2; the step that
-crosses the budget completes; a checkpoint is taken at the first step that reaches 25, 50, 75 and 100% of the budget
-(EVAL_PLAN §8), and a final one after an early stop. (g) Each epoch visits the records in a seeded shuffle; the last
-batch of an epoch may be smaller, and pass 2 normalizes by its own number of graphs (D-014). (h) The guard against
-an update between the passes compares each trainable parameter's storage and in-place version counter before pass 1
-and before pass 2. (i) The pass-2 loss value is returned for tests only; nothing logs it (SPEC §6.5). Default: as
+learning rate follows tokens, not steps (configurations without pass 1 take more steps): linear warm-up over the
+first 3% of the run's own tokens, then cosine decay to 0 at the budget; the first step has learning rate 0, as in the
+usual step-based schedule. A run that starts from a warm-up checkpoint (D-010) starts with a fresh optimizer, so it
+gets its own warm-up. Gradients are clipped at norm 1.0 for every configuration; AdamW. (f) The budget counts real
+tokens (prompts plus targets, padding excluded) of pass 1 and pass 2 (D-024a); the step that crosses the budget
+completes; a checkpoint is taken at the first step that reaches 25, 50, 75 and 100% of the budget (EVAL_PLAN §8), and
+a final one after an early stop. The optional B+ diagnostic (QET runs only) scores the actions that leave S outside
+the budget and logs its tokens separately. (g) Each epoch visits the records in a seeded shuffle; the last batch of
+an epoch may be smaller, and pass 2 normalizes by its own number of graphs (D-014). (h) Guard against an update
+between the passes: an optimizer step pre-hook raises from the start of pass 1 to the end of pass 2, and each
+trainable parameter's storage, in-place version counter and float64 checksum are compared before pass 1, before
+pass 2 and after it (the checksum catches fused optimizers and writes through `.data`, which leave the version
+counter alone). Gradients are cleared at the start of every step. (i) The pass-2 loss value is returned for tests
+only; nothing logs it (SPEC §6.5). (j) The pack builder's run seed must be the run's seed, so the three seeds of a
+configuration sample different sub-lattices; `train` builds the epoch-0 packs before the first step, so a graph that
+cannot be trained on (more than S_max states without K, a refused target) fails before compute is spent. Default: as
 described; cheap to reverse.
 
 ### D-024 Scorer details left open by SPEC §6.7
@@ -338,3 +346,7 @@ cheap to reverse.
   would be trained to emit invalid JSON; `target_ids` now refuses such strings on every backbone (D-022c), so a
   demonstration carrying such a value cannot be trained on. Change `canon_json` to write a combining mark that
   follows an escape as `\uXXXX` (no fixture is affected), or keep refusing?
+- [ ] Q17 (from the E1.3 review; SPEC §8 a4, EVAL_PLAN §1 C5) D-023a applies the sub-lattice to every graph for
+  ablation a4, because otherwise a4 equals configuration 6 on every graph below S_max and "exact vs a4 with K in
+  {2, 4, 8}" (claim C5, figure F5) measures nothing there. SPEC §8 read literally ("§6.6 with the given K") samples
+  only above S_max. Confirm D-023a before M1.6, since it fixes what a pre-registered comparison means.
