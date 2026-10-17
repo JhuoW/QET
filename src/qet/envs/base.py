@@ -53,10 +53,23 @@ def run_calls(env: Environment, calls: Sequence[Mapping[str, Any]]) -> list[dict
     return [{"tool": c["tool"], "args": dict(c["args"]), "obs": env.step(c["tool"], c["args"])} for c in calls]
 
 
-def replay_audit(make_env: Callable[[], Environment], record: GraphRecord, *, k: int, seed: int) -> tuple[int, int]:
-    """SPEC §4: from a fresh environment, execute k random topological orders of the record's graph and compare
-    every node's canonical observation (volatile fields removed) and the final state with the demo's. Returns
-    (orders replayed, mismatching orders)."""
+def hoisted_orders(record: GraphRecord) -> list[list[int]]:
+    """One legal order per node: its ancestors in the compiled graph, then the node, then the rest in demo order. Each
+    runs the node before every call Compile left independent of it, so a dependency Compile missed shows (D-029)."""
+    anc = ancestor_masks(record.n, record.preds())
+    orders = []
+    for v in range(record.n):
+        first = [u for u in range(record.n) if anc[v] >> u & 1] + [v]
+        orders.append(first + [u for u in range(record.n) if u not in set(first)])
+    return orders
+
+
+def replay_audit(
+    make_env: Callable[[], Environment], record: GraphRecord, *, k: int, seed: int, hoisted: bool = False
+) -> tuple[int, int]:
+    """SPEC §4: from a fresh environment, execute k random topological orders of the record's graph (and, with
+    hoisted=True, every node's hoisted order, D-029) and compare every node's canonical observation (volatile fields
+    removed) and the final state with the demo's. Returns (orders replayed, mismatching orders)."""
     env = make_env()
     contracts = as_contracts(env.contracts())
     expected_obs = [nd.obs for nd in record.nodes]
@@ -64,9 +77,9 @@ def replay_audit(make_env: Callable[[], Environment], record: GraphRecord, *, k:
     expected_state = canon(env.final_state())
     rng = random.Random(seed)
     masks = node_masks(record.n, record.preds())
+    orders = [random_topological_order(masks, rng) for _ in range(k)] + (hoisted_orders(record) if hoisted else [])
     mismatches = 0
-    for _ in range(k):
-        order = random_topological_order(masks, rng)
+    for order in orders:
         env = make_env()
         got = {}
         for v in order:
@@ -74,7 +87,7 @@ def replay_audit(make_env: Callable[[], Environment], record: GraphRecord, *, k:
             got[v] = contracts.canon_obs(nd.tool, env.step(nd.tool, nd.args))
         if any(got[v] != expected_obs[v] for v in range(record.n)) or canon(env.final_state()) != expected_state:
             mismatches += 1
-    return k, mismatches
+    return len(orders), mismatches
 
 
 def edge_audit(record: GraphRecord, true_preds: Sequence[Sequence[int]], *, orders: int = 200, seed: int = 0):

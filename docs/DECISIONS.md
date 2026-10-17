@@ -34,6 +34,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-026 | Proposed | Inference and evaluation details (end-of-E1 review) |
 | D-027 | Proposed | FuncBenchGen adapter details |
 | D-028 | Proposed | M1 grid, splits and manifests (draft until Gate A) |
+| D-029 | Proposed | The replay audit adds one hoisted order per node |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -402,6 +403,18 @@ the pinned repository under any hash seed (built with PYTHONHASHSEED=7, checked 
   `stateful_train.json` 2e9318bd5ece43a35d8faebd649153575b1e75930c329f4df9f753037d2b8bd8
   `stateful_test.json` 3c8b6cbb96af7f96c0c880af94dfd549ca6c41622936e449ad93a5718ef1b45b
 These are drafts: the test manifests are frozen at Gate A (EVAL_PLAN §0), and any change before then is recorded here.
+
+### D-029 The replay audit adds one hoisted order per node
+`src/qet/envs/base.py` (`hoisted_orders`, `replay_audit(hoisted=True)`), used by `scripts/compile_m1.py`. SPEC §4's
+replay audit executes K random topological orders (K = 8 here). In FuncBenchGen, a hidden value that equals a stated
+input value makes Compile take it as available from the start and drop the data edge; a 200-graph sample of the
+training split showed such misses and that 8 random orders alone left some of them undetected, so those graphs would
+have trained on orders that are illegal in truth. The audit therefore also executes, for every node, its hoisted order:
+the node's ancestors in the compiled graph, then the node, then the rest in demo order. That runs each node before
+every call Compile left independent of it, so a dependency Compile missed executes its consumer before its producer,
+the environment's observation differs, and the graph falls back to a chain. It costs n extra replays per graph, and it
+reads only the compiled graph and the trace, never the true DAG. The numbers come from the M1.3 compile run in
+results/raw/ (compile report, audits). Default: as described; cheap to reverse.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.

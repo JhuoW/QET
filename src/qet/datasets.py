@@ -3,7 +3,9 @@ evaluation tasks, the tool contracts, and a data manifest that pins all of it by
 
 from __future__ import annotations
 
+import dataclasses
 import json
+import random
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -92,3 +94,97 @@ def write_dataset(ds: Dataset, out: Path, resume_starts: list[dict[str, Any]] | 
     path = out / "data_manifest.json"
     path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return path, sha256_file(path)
+
+
+# ----------------------------------------------------------------------------- M1 (FuncBenchGen, stateful extension)
+@dataclass
+class CompiledTask:
+    """One evaluation or training task after M1.3: the record trained on (after the replay audit) and the audits."""
+
+    record: GraphRecord  # Compile's graph, or its chain fallback after a failed replay audit (SPEC §4)
+    raw: GraphRecord  # Compile's own output
+    true_preds: list[list[int]]  # the generator's DAG by demo position (audits only, never Compile's input)
+    replayed: int
+    mismatches: int
+    audit_raw: dict[str, Any]
+    audit_final: dict[str, Any]
+
+
+def compile_trace(
+    task: Any, make_env: Callable[[Any], Environment], *, demo_seed: int, audit_orders: int
+) -> CompiledTask:
+    """D-007: the demonstration is a seeded random topological order of the generator's true DAG, executed in the
+    environment and verified by its checker; Compile sees the trace only (no task constraints, D-020a); the replay
+    audit executes `audit_orders` random legal orders and every node's hoisted order (D-029), and falls back to a
+    chain on any mismatch."""
+    from qet.core.compile import compile_demo, fallback_to_chain
+    from qet.core.lattice import node_masks, random_topological_order
+    from qet.envs.base import edge_audit, replay_audit
+
+    rng = random.Random(f"m1-demo\x1f{task.task_id}\x1f{demo_seed}")
+    order = random_topological_order(node_masks(len(task.calls), task.true_preds), rng)
+    env = make_env(task)
+    steps = run_calls(env, [task.calls[i] for i in order])
+    if not env.check(task.answer) or getattr(env, "failures", None):
+        raise ValueError(f"the demonstration of {task.task_id} does not pass the checker")
+    demo = [*steps, {"tool": "finish", "args": {"answer": task.answer}}]
+    raw = compile_demo(task.public(), demo, env.contracts(), task_id=task.task_id)
+    replayed, mismatches = replay_audit(lambda: make_env(task), raw, k=audit_orders, seed=demo_seed, hoisted=True)
+    if mismatches:
+        record = fallback_to_chain(raw, orders_replayed=replayed, mismatches=mismatches)
+    else:
+        record = dataclasses.replace(raw, compile=dataclasses.replace(raw.compile, orders_replayed=replayed))
+    position = {call: i for i, call in enumerate(order)}
+    true_preds = [sorted(position[u] for u in task.true_preds[call]) for call in order]
+    return CompiledTask(record, raw, true_preds, replayed, mismatches, edge_audit(raw, true_preds),
+                        edge_audit(record, true_preds))  # fmt: skip
+
+
+def m1_tasks(manifest: dict[str, Any]) -> list[Any]:
+    """The tasks a manifest lists, rebuilt and checked against its content hashes."""
+    from qet.envs.funcbenchgen import build_task, cell_config, graph_payloads, task_digest
+    from qet.envs.toy import stateful_task
+
+    entries = manifest["tasks"]
+    if manifest["source"] == "qet.envs.toy.stateful_task":
+        tasks = []
+        for e in entries:
+            t = stateful_task(e["seed"], n_orders=e["n_orders"], n_accounts=e["n_accounts"], task_id=e["task_id"])
+            tasks.append(t)
+        return tasks
+    cells = [cell_config(e["core"], e["depth"], e["irrelevant"], e["form"]) for e in entries]
+    graph_payloads([(c, e["graph_seed"]) for c, e in zip(cells, entries, strict=True)])
+    tasks = []
+    for c, e in zip(cells, entries, strict=True):
+        t = build_task(c, e["graph_seed"], e["trial"], renamed=e["renamed"])
+        if (t.task_id, task_digest(t)) != (e["task_id"], e["sha256"]):
+            raise ValueError(f"{e['task_id']} does not match its manifest entry")
+        tasks.append(t)
+    return tasks
+
+
+def audit_summary(compiled: list[CompiledTask]) -> dict[str, Any]:
+    """Compile against the true DAGs (EVAL_PLAN §7): edge precision and recall, recall by reachability, the
+    unsafe-order rate, and how the replay audit handled the graphs whose Compile missed a true constraint."""
+
+    def mean(xs: list[float]) -> float | None:
+        return sum(xs) / len(xs) if xs else None
+
+    missed = [c for c in compiled if c.audit_raw["recall_by_reachability"] < 1.0]
+    return {
+        "graphs": len(compiled),
+        "task_constraints_passed": 0,  # D-020a: no task_order reaches Compile in M1
+        "raw": {
+            k: mean([c.audit_raw[k] for c in compiled])
+            for k in ("precision", "recall", "recall_by_reachability", "unsafe_order_rate")
+        },  # fmt: skip
+        "final": {
+            k: mean([c.audit_final[k] for c in compiled])
+            for k in ("precision", "recall", "recall_by_reachability", "unsafe_order_rate")
+        },  # fmt: skip
+        "raw_missed_a_true_constraint": len(missed),
+        "missed_and_caught_by_replay": sum(c.mismatches > 0 for c in missed),
+        "final_with_unsafe_orders": sum(c.audit_final["unsafe_order_rate"] > 0 for c in compiled),
+        "replay_fallbacks": sum(c.mismatches > 0 for c in compiled),
+        "replay_orders_per_graph": compiled[0].replayed if compiled else None,
+    }
