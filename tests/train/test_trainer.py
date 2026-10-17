@@ -530,3 +530,12 @@ def test_an_untrainable_graph_fails_before_any_forward_pass(fmt, recs):
     with pytest.raises(ValueError, match="more than 256 states"):
         train(scorer, no_k, recs, TrainConfig(token_budget=10_000), torch.optim.SGD(scorer.parameters(), lr=0.1))
     assert scorer.calls == []
+
+
+def test_the_wall_clock_stop(fmt, recs):
+    scorer = LMScorer(lm(14), pad_id=fmt.eot_id)
+    ckpts = []
+    cfg = TrainConfig(token_budget=10**9, max_minutes=0.0)
+    opt = torch.optim.SGD(scorer.parameters(), lr=0.1)
+    summary = train(scorer, builder(fmt, "2"), recs, cfg, opt, on_checkpoint=lambda label, row: ckpts.append(label))
+    assert summary["steps"] == 0 and summary["tokens_used"] == 0 and ckpts == []

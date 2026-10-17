@@ -66,6 +66,7 @@ class TrainSettings:
     checkpoint_fractions: tuple[float, ...] = (0.25, 0.5, 0.75, 1.0)
     plus: bool = False
     warmup_steps: int = 0  # D-010 format warm-up: demo-order SFT steps in this configuration's renderer
+    max_minutes: float | None = None  # stop training after this wall time (pilots that must fit a job's walltime)
 
 
 @dataclass(frozen=True)

@@ -305,7 +305,8 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory) -> tuple[di
                 used = warm["tokens_used"]
             tcfg = TrainConfig(token_budget=t.token_budget, batch_graphs=t.batch_graphs, lr=t.lr, warmup=t.warmup,
                                max_grad_norm=t.max_grad_norm, seed=cfg.seed, plus=t.plus,
-                               checkpoint_fractions=t.checkpoint_fractions, tokens_at_start=used)  # fmt: skip
+                               checkpoint_fractions=t.checkpoint_fractions, tokens_at_start=used,
+                               max_minutes=t.max_minutes)  # fmt: skip
 
             def save(label: str, row: dict[str, Any]) -> None:
                 path = ckpt_dir / label

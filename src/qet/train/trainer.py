@@ -376,6 +376,7 @@ class TrainConfig:
     checkpoint_fractions: tuple[float, ...] = (0.25, 0.5, 0.75, 1.0)
     tokens_at_start: int = 0  # tokens already spent, e.g. by the format warm-up of the parent checkpoint (D-010)
     max_steps: int | None = None  # a hard stop (tests, smoke runs)
+    max_minutes: float | None = None  # a wall-clock stop (throughput pilots that must fit a job's walltime)
 
 
 def train(
@@ -407,8 +408,11 @@ def train(
     totals = {"scored": TokenCounts(), "gradient": TokenCounts(), "diagnostic": TokenCounts()}
     row: dict[str, Any] = {}
 
+    started = time.perf_counter()
+
     def done() -> bool:
-        return used >= cfg.token_budget or (cfg.max_steps is not None and step >= cfg.max_steps)
+        late = cfg.max_minutes is not None and time.perf_counter() - started >= 60 * cfg.max_minutes
+        return used >= cfg.token_budget or (cfg.max_steps is not None and step >= cfg.max_steps) or late
 
     while not done():
         order = list(range(len(records)))
