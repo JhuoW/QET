@@ -29,6 +29,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-021 | Proposed | Compute and access policy until the human sets a budget |
 | D-022 | Proposed | Chat details left open by SPEC §6.7 and D-002 |
 | D-023 | Proposed | Trainer details left open by SPEC §6.5, §8 and D-009 |
+| D-024 | Proposed | Scorer details left open by SPEC §6.7 |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -263,6 +264,22 @@ batch of an epoch may be smaller, and pass 2 normalizes by its own number of gra
 an update between the passes compares each trainable parameter's storage and in-place version counter before pass 1
 and before pass 2. (i) The pass-2 loss value is returned for tests only; nothing logs it (SPEC §6.5). Default: as
 described; cheap to reverse.
+
+### D-024 Scorer details left open by SPEC §6.7
+`src/qet/train/scoring.py`. (a) Token accounting: scored tokens are the prompt plus target tokens of the pass-1
+sequences, gradient tokens the prompt plus target tokens of the pass-2 sequences (forward and backward process whole
+sequences); padding counts in neither and is logged separately as padded positions; seconds are each pass's wall
+time (the trainer times pass 2 as a whole). (b) Sequences are right-padded and run with an all-ones attention mask,
+so only the causal mask applies and SDPA can use its causal kernels. Scores are batch-invariant exactly in float64
+with sdpa attention (not with eager attention, whose softmax runs in float32); in bf16 the invariance is measured on
+the GPU. (c) Only plain LoRA adapters are accepted, because prompt and prefix tuning act inside `PeftModel.forward`,
+which the scorer bypasses; dynamic RoPE scaling is refused, because its frequencies depend on the padded width.
+(d) Micro-batches cap padded positions and, optionally, target tokens, since each target token needs
+vocabulary-sized float32 logits. (e) Deferred to the M1.4 pilot: gradient checkpointing for the 7B and 8B models
+(Hugging Face checkpoints only in training mode and both passes run in eval mode, so the scorer will wrap the
+decoder layers in `torch.utils.checkpoint` itself; recomputation is exact without dropout), and the bf16 invariance
+test on each backbone that will be trained (Qwen2.5-7B-Instruct, Llama-3.1-8B-Instruct). Default: as described;
+cheap to reverse.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.

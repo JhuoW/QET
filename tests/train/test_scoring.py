@@ -135,6 +135,75 @@ def test_lora_wrapped_models_score_through_the_adapters():
     assert base == want  # get_base_model() keeps the injected adapters
 
 
+def test_pass_1_runs_without_gradients():
+    """SPEC §6.5: pass 1 scores under no_grad; pass 2 (forward_logp with grad enabled) builds a graph."""
+    model = tiny_lm("qwen2")
+    seen = []
+    handle = model.model.register_forward_pre_hook(lambda module, args: seen.append(torch.is_grad_enabled()))
+    pairs = random_pairs(random.Random(11), 5)
+    with torch.enable_grad():
+        score(model, pairs, pad_id=0)
+        assert seen and not any(seen)
+        seen.clear()
+        out = forward_logp(model, pairs, pad_id=0)
+    handle.remove()
+    assert seen == [True] and out.requires_grad and out.dtype == torch.float64
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16, torch.float32])
+def test_log_softmax_in_float32_and_sums_in_float64(dtype):
+    """SPEC §6.7 on a half-precision model: the reference takes the same output-layer logits, upcasts them to float32
+    for the log-softmax and sums in float64; a log-softmax in the model's dtype would differ."""
+    model = tiny_lm("llama", dtype=dtype)
+    pairs = random_pairs(random.Random(12), 8)
+    width = max(len(p) for p in pairs)
+    ids = torch.zeros((len(pairs), width), dtype=torch.long)
+    rows, cols, targets = [], [], []
+    for i, p in enumerate(pairs):
+        ids[i, : len(p)] = torch.tensor(p.prompt_ids + p.target_ids)
+        rows += [i] * len(p.target_ids)
+        cols += range(len(p.prompt_ids) - 1, len(p) - 1)
+        targets += p.target_ids
+    with torch.no_grad():
+        hidden = model.model(input_ids=ids, attention_mask=torch.ones_like(ids)).last_hidden_state
+        logits = model.lm_head(hidden[torch.tensor(rows), torch.tensor(cols)])
+        tok = torch.tensor(targets)[:, None]
+        exact = logits.float().log_softmax(-1).gather(1, tok).squeeze(1).double()
+        native = logits.log_softmax(-1).gather(1, tok).squeeze(1).double()
+        want = torch.zeros(len(pairs), dtype=torch.float64).index_add(0, torch.tensor(rows), exact)
+        low = torch.zeros(len(pairs), dtype=torch.float64).index_add(0, torch.tensor(rows), native)
+        got = forward_logp(model, pairs, pad_id=0)
+    assert got.dtype == torch.float64
+    assert torch.allclose(got, want, rtol=1e-12, atol=0)
+    if dtype != torch.float32:
+        assert (got - low).abs().max() > 1e-3  # the test would notice a log-softmax in the model's dtype
+
+
+def test_adapters_other_than_lora_and_dynamic_rope_are_refused():
+    from peft import PrefixTuningConfig, PromptTuningConfig, get_peft_model
+
+    pairs = random_pairs(random.Random(13), 2)
+    for cfg in (
+        PromptTuningConfig(task_type="CAUSAL_LM", num_virtual_tokens=4),
+        PrefixTuningConfig(task_type="CAUSAL_LM", num_virtual_tokens=4),
+    ):
+        model = get_peft_model(tiny_lm("llama"), cfg).eval()
+        with pytest.raises(ValueError, match="plain LoRA"):
+            score(model, pairs, pad_id=0)
+    model = tiny_lm("llama", rope_scaling={"rope_type": "dynamic", "factor": 2.0})
+    with pytest.raises(ValueError, match="dynamic RoPE"):
+        score(model, pairs, pad_id=0)
+
+
+def test_micro_batches_cap_target_tokens():
+    pairs = random_pairs(random.Random(14), 40)
+    for cap in (1, 9, 20, 50):
+        batches = micro_batches(pairs, 10**6, max_target_tokens=cap)
+        assert sorted(i for b in batches for i in b) == list(range(40))
+        for b in batches:
+            assert len(b) == 1 or sum(len(pairs[i].target_ids) for i in b) <= cap
+
+
 def test_unsupported_model_types_are_refused():
     from transformers import GPT2Config, GPT2LMHeadModel
 
@@ -180,3 +249,7 @@ def test_batch_and_padding_invariance_in_bf16_on_gpu():
     print(f"bf16 batch invariance: worst |delta log pi| = {worst:.3g} over {len(pairs)} pairs")
     assert all(math.isfinite(x) and x < 0 for x in alone)
     assert worst <= 1e-4
+    full, _ = score(model.float(), pairs, pad_id=fmt.eot_id, max_tokens=4096)  # the same weights in float32
+    gap = max(abs(a - b) for a, b in zip(alone, full, strict=True))
+    print(f"bf16 vs float32 scores: worst |delta log pi| = {gap:.3g}, mean log pi = {sum(full) / len(full):.3f}")
+    assert gap < 1.0  # a gross error (a wrong dtype path, a different function) shows up as nats

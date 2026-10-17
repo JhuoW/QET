@@ -5,9 +5,12 @@ no renormalization over the legal actions. Log-softmax runs in float32 (in float
 float64. The model must be in eval mode (dropout inactive) in pass 1, which scores without gradients, and in pass 2,
 which differentiates the same function for the weighted SFT loss.
 
-Sequences are right-padded and run without an attention mask: under causal attention a real token never attends to the
-padding after it and keeps its position 0..len-1, so a pair's log pi does not depend on the batch it is in. Only the
-hidden states at target positions go through the output layer.
+Sequences are right-padded and run with an all-ones attention mask, so only the causal mask applies: a real token never
+attends to the padding after it and keeps its position 0..len-1, so a pair's log pi does not depend on the batch it is
+in (exactly with sdpa in float64; eager attention computes its softmax in float32), and SDPA may use its causal
+kernels. Only the hidden states at target positions go through the output layer. Plain LoRA is the only adapter
+accepted: prompt and prefix tuning act inside `PeftModel.forward`, which the scorer bypasses. Dynamic RoPE scaling is
+refused because its frequencies depend on the padded width (D-024).
 """
 
 from __future__ import annotations
@@ -64,7 +67,7 @@ class TokenCounts:
         return {**asdict(self), "tokens": self.tokens}
 
 
-def count_tokens(pairs: Sequence[Pair], seconds: float = 0.0) -> TokenCounts:
+def count_tokens(pairs: Sequence[Pair], *, seconds: float) -> TokenCounts:
     return TokenCounts(
         sequences=len(pairs),
         prompt_tokens=sum(len(p.prompt_ids) for p in pairs),
@@ -82,10 +85,21 @@ def assert_eval_mode(model: torch.nn.Module) -> None:
 
 
 def _decoder_and_head(model: torch.nn.Module) -> tuple[torch.nn.Module, torch.nn.Module]:
-    base = model.get_base_model() if hasattr(model, "get_base_model") else model  # a PEFT model wraps the original
+    peft_config = getattr(model, "peft_config", None)
+    if peft_config is not None:  # a PEFT model wraps the original, with LoRA injected into its linear layers
+        for name, cfg in peft_config.items():
+            kind = getattr(cfg.peft_type, "value", cfg.peft_type)
+            if kind != "LORA" or getattr(cfg, "alora_invocation_tokens", None):
+                raise ValueError(f"adapter {name!r} is {kind}: the scorer supports plain LoRA only")
+        base = model.get_base_model()
+    else:
+        base = model
     model_type = getattr(base.config, "model_type", None)
     if model_type not in SUPPORTED_MODEL_TYPES:
         raise ValueError(f"unsupported model type {model_type!r}; supported: {SUPPORTED_MODEL_TYPES}")
+    rope = getattr(base.config, "rope_scaling", None) or {}
+    if (rope.get("rope_type") or rope.get("type")) == "dynamic":
+        raise ValueError("dynamic RoPE scaling depends on the padded width; scores would depend on the batch")
     return base.get_decoder(), base.get_output_embeddings()
 
 
@@ -108,7 +122,8 @@ def forward_logp(model: torch.nn.Module, pairs: Sequence[Pair], pad_id: int) -> 
         rows += [i] * len(p.target_ids)
         cols += range(start, start + len(p.target_ids))
         targets += p.target_ids
-    hidden = decoder(input_ids=ids.to(device), use_cache=False).last_hidden_state
+    ids = ids.to(device)
+    hidden = decoder(input_ids=ids, attention_mask=torch.ones_like(ids), use_cache=False).last_hidden_state
     rows_t = torch.tensor(rows, device=device)
     logits = head(hidden[rows_t, torch.tensor(cols, device=device)])
     if logits.dtype in (torch.float16, torch.bfloat16):
@@ -118,20 +133,23 @@ def forward_logp(model: torch.nn.Module, pairs: Sequence[Pair], pad_id: int) -> 
     return zeros.index_add(0, rows_t, token_logp.to(torch.float64))
 
 
-def micro_batches(pairs: Sequence[Pair], max_tokens: int) -> list[list[int]]:
-    """Indices of the pairs in groups of at most `max_tokens` padded positions (a longer pair goes alone), longest
-    pairs first so that padding stays small."""
+def micro_batches(pairs: Sequence[Pair], max_tokens: int, max_target_tokens: int | None = None) -> list[list[int]]:
+    """Indices of the pairs in groups of at most `max_tokens` padded positions and, optionally, `max_target_tokens`
+    target tokens (each needs vocabulary-sized logits), longest pairs first so that padding stays small. A pair over
+    either limit goes alone."""
     order = sorted(range(len(pairs)), key=lambda i: (-len(pairs[i]), i))
     batches: list[list[int]] = []
     current: list[int] = []
-    longest = 0
+    longest = targets = 0
     for i in order:
-        n = len(pairs[i])
-        if current and max(longest, n) * (len(current) + 1) > max_tokens:
+        n, t = len(pairs[i]), len(pairs[i].target_ids)
+        too_wide = max(longest, n) * (len(current) + 1) > max_tokens
+        too_many = max_target_tokens is not None and targets + t > max_target_tokens
+        if current and (too_wide or too_many):
             batches.append(current)
-            current, longest = [], 0
+            current, longest, targets = [], 0, 0
         current.append(i)
-        longest = max(longest, n)
+        longest, targets = max(longest, n), targets + t
     if current:
         batches.append(current)
     return batches
@@ -139,12 +157,17 @@ def micro_batches(pairs: Sequence[Pair], max_tokens: int) -> list[list[int]]:
 
 @torch.no_grad()
 def score(
-    model: torch.nn.Module, pairs: Sequence[Pair], *, pad_id: int, max_tokens: int = 16384
+    model: torch.nn.Module,
+    pairs: Sequence[Pair],
+    *,
+    pad_id: int,
+    max_tokens: int = 16384,
+    max_target_tokens: int | None = None,
 ) -> tuple[list[float], TokenCounts]:
     """Pass 1: log pi of every pair without gradients (float64), and the tokens it took."""
     out = [0.0] * len(pairs)
     counts = TokenCounts()
-    for idx in micro_batches(pairs, max_tokens):
+    for idx in micro_batches(pairs, max_tokens, max_target_tokens):
         t0 = time.perf_counter()
         batch = [pairs[i] for i in idx]
         values = forward_logp(model, batch, pad_id).tolist()  # .tolist() waits for the device

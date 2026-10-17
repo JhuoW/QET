@@ -158,8 +158,11 @@ class Scorer(Protocol):
 class LMScorer:
     """A causal language model, optionally LoRA-wrapped, scoring the packs' (prompt, target) pairs."""
 
-    def __init__(self, model: torch.nn.Module, pad_id: int, max_tokens: int = 16384):
-        self.model, self.pad_id, self.max_tokens = model, pad_id, max_tokens
+    def __init__(
+        self, model: torch.nn.Module, pad_id: int, max_tokens: int = 16384, max_target_tokens: int | None = None
+    ):
+        self.model, self.pad_id = model, pad_id
+        self.max_tokens, self.max_target_tokens = max_tokens, max_target_tokens
 
     def parameters(self) -> list[torch.nn.Parameter]:
         return [p for p in self.model.parameters() if p.requires_grad]
@@ -168,14 +171,17 @@ class LMScorer:
         self, packs: Sequence[LatticePack], items: Sequence[Item], *, grad: bool
     ) -> tuple[torch.Tensor, TokenCounts]:
         pairs = [packs[g].pair(e) for g, e in items]
-        if grad:  # one micro-batch of pass 2; the caller runs backward
+        if grad:  # one micro-batch of pass 2; the caller runs backward and times the whole pass
             with torch.enable_grad():
-                return forward_logp(self.model, pairs, self.pad_id), count_tokens(pairs)
-        values, counts = score(self.model, pairs, pad_id=self.pad_id, max_tokens=self.max_tokens)
+                return forward_logp(self.model, pairs, self.pad_id), count_tokens(pairs, seconds=0.0)
+        values, counts = score(
+            self.model, pairs, pad_id=self.pad_id, max_tokens=self.max_tokens, max_target_tokens=self.max_target_tokens
+        )
         return torch.tensor(values, dtype=torch.float64), counts
 
     def micro_batches(self, packs: Sequence[LatticePack], items: Sequence[Item]) -> list[list[int]]:
-        return micro_batches([packs[g].pair(e) for g, e in items], self.max_tokens)
+        pairs = [packs[g].pair(e) for g, e in items]
+        return micro_batches(pairs, self.max_tokens, self.max_target_tokens)
 
 
 def add_lora(model: torch.nn.Module, *, rank: int = 64, alpha: int = 128, seed: int = 0) -> torch.nn.Module:

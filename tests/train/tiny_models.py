@@ -6,9 +6,10 @@ from transformers import LlamaConfig, LlamaForCausalLM, Qwen2Config, Qwen2ForCau
 MODEL_TYPES = ("qwen2", "llama")
 
 
-def tiny_lm(model_type: str = "qwen2", *, vocab_size: int = 101, seed: int = 0, dtype=torch.float64):
-    """Two layers, hidden size 32, grouped-query attention; larger initial weights than the default so that the
-    distributions are far from uniform. Returned in eval mode."""
+def tiny_lm(model_type: str = "qwen2", *, vocab_size: int = 101, seed: int = 0, dtype=torch.float64, **overrides):
+    """Two layers, hidden size 32, grouped-query attention, sdpa attention (eager computes its softmax in float32,
+    which would cap the float64 tolerances); larger initial weights than the default so that the distributions are far
+    from uniform. Returned in eval mode."""
     torch.manual_seed(seed)
     common = {
         "vocab_size": vocab_size,
@@ -19,6 +20,8 @@ def tiny_lm(model_type: str = "qwen2", *, vocab_size: int = 101, seed: int = 0, 
         "num_key_value_heads": 2,
         "max_position_embeddings": 1024,
         "initializer_range": 0.3,
+        "attn_implementation": "sdpa",
+        **overrides,
     }
     if model_type == "qwen2":
         model = Qwen2ForCausalLM(Qwen2Config(**common, tie_word_embeddings=True))
