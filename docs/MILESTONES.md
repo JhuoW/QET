@@ -139,8 +139,14 @@ Goal: the end-to-end pipeline works and is provably consistent before any expens
   tests/envs/test_funcbenchgen.py -q` → 19 passed (disjoint splits, the full grid, held-out larger needs more calls,
   renamed graphs isomorphic with new names, tasks rebuild to their hashes under any hash seed); hashes in D-028
   (drafts until Gate A); commit 31c2ec0
-- [ ] **M1.3 Demonstrations and compile** (D-007): one executed successful trace per training graph; compile;
+- [x] **M1.3 Demonstrations and compile** (D-007): one executed successful trace per training graph; compile;
   audit against the true DAGs (edge precision / recall, unsafe-order rate); compile report.
+  evidence: `python scripts/compile_m1.py` → results/raw/M1-compile-20261017T161839Z (commit 2e428e3, clean;
+  RUNLOG row): all 16,416 tasks of the 7 M1 manifests have a checker-verified demonstration (D-007), Compile on
+  the trace alone (no task constraints, D-020a), the replay audit with random and hoisted orders (D-029) and the
+  audit against the true DAG; per split: records, raw records, per-task audits and the compile report
+  (report.json); `pytest tests/envs/test_m1_compile.py -q -m ""` → 5 passed; the statistics go to Gate A through
+  the results-auditor; commit 76c0230
 - [ ] **M1.4 Pilot**: 500 training graphs; lattice sizes, width bins, tokens per graph; a short configuration-6
   run on Qwen2.5-7B-Instruct to measure throughput; GPU-hour projection for the run matrix.
 - [ ] **GATE A** (`scripts/gate_report.py --gate A` → `docs/reports/gate-A.md`): compile coverage and fallback,
