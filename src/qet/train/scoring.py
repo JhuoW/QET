@@ -5,10 +5,12 @@ no renormalization over the legal actions. Log-softmax runs in float32 (in float
 float64. The model must be in eval mode (dropout inactive) in pass 1, which scores without gradients, and in pass 2,
 which differentiates the same function for the weighted SFT loss.
 
-Sequences are right-padded and run with an all-ones attention mask, so only the causal mask applies: a real token never
+Sequences are right-padded and run without an attention mask, so only causal masking applies: a real token never
 attends to the padding after it and keeps its position 0..len-1, so a pair's log pi does not depend on the batch it is
-in (exactly with sdpa in float64; eager attention computes its softmax in float32), and SDPA may use its causal
-kernels. Only the hidden states at target positions go through the output layer. Plain LoRA is the only adapter
+in (exactly with sdpa in float64; eager attention computes its softmax in float32). Without a mask, transformers
+passes SDPA an explicit causal mask, which in bf16 gave identical scores alone and batched; an all-ones mask lets SDPA
+take its flash kernel, whose bf16 scores moved by up to 0.5 nats with the batch (D-024b). Only the hidden states at
+target positions go through the output layer. Plain LoRA is the only adapter
 accepted: prompt and prefix tuning act inside `PeftModel.forward`, which the scorer bypasses. Dynamic RoPE scaling is
 refused because its frequencies depend on the padded width (D-024).
 """
@@ -123,7 +125,7 @@ def forward_logp(model: torch.nn.Module, pairs: Sequence[Pair], pad_id: int) -> 
         cols += range(start, start + len(p.target_ids))
         targets += p.target_ids
     ids = ids.to(device)
-    hidden = decoder(input_ids=ids, attention_mask=torch.ones_like(ids), use_cache=False).last_hidden_state
+    hidden = decoder(input_ids=ids, use_cache=False).last_hidden_state  # no mask: see the module docstring
     rows_t = torch.tensor(rows, device=device)
     logits = head(hidden[rows_t, torch.tensor(cols, device=device)])
     if logits.dtype in (torch.float16, torch.bfloat16):

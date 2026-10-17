@@ -166,7 +166,7 @@ def test_log_softmax_in_float32_and_sums_in_float64(dtype):
         cols += range(len(p.prompt_ids) - 1, len(p) - 1)
         targets += p.target_ids
     with torch.no_grad():
-        hidden = model.model(input_ids=ids, attention_mask=torch.ones_like(ids)).last_hidden_state
+        hidden = model.model(input_ids=ids, use_cache=False).last_hidden_state  # exactly the scorer's call
         logits = model.lm_head(hidden[torch.tensor(rows), torch.tensor(cols)])
         tok = torch.tensor(targets)[:, None]
         exact = logits.float().log_softmax(-1).gather(1, tok).squeeze(1).double()

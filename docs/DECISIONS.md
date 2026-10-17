@@ -282,10 +282,12 @@ described; cheap to reverse.
 `src/qet/train/scoring.py`. (a) Token accounting: scored tokens are the prompt plus target tokens of the pass-1
 sequences, gradient tokens the prompt plus target tokens of the pass-2 sequences (forward and backward process whole
 sequences); padding counts in neither and is logged separately as padded positions; seconds are each pass's wall
-time (the trainer times pass 2 as a whole). (b) Sequences are right-padded and run with an all-ones attention mask,
-so only the causal mask applies and SDPA can use its causal kernels. Scores are batch-invariant exactly in float64
-with sdpa attention (not with eager attention, whose softmax runs in float32); in bf16 the invariance is measured on
-the GPU. (c) Only plain LoRA adapters are accepted, because prompt and prefix tuning act inside `PeftModel.forward`,
+time (the trainer times pass 2 as a whole). (b) Sequences are right-padded and run without an attention mask, so
+only causal masking applies. Scores are batch-invariant exactly in float64 with sdpa attention (not with eager
+attention, whose softmax runs in float32). In bf16 on an H200 (Qwen2.5-0.5B-Instruct), the no-mask path, where
+transformers passes SDPA an explicit causal mask, gave identical scores alone and batched (job 87685.gaas), while an
+all-ones mask, which lets SDPA take its flash kernel, moved scores by up to 0.50 nats (job 87769.gaas); the
+faster kernel is therefore not used. (c) Only plain LoRA adapters are accepted, because prompt and prefix tuning act inside `PeftModel.forward`,
 which the scorer bypasses; dynamic RoPE scaling is refused, because its frequencies depend on the padded width.
 (d) Micro-batches cap padded positions and, optionally, target tokens, since each target token needs
 vocabulary-sized float32 logits. (e) Deferred to the M1.4 pilot: gradient checkpointing for the 7B and 8B models
