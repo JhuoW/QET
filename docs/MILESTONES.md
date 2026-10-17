@@ -56,10 +56,15 @@ Goal: `src/qet/core` reproduces every fixture; property tests hold on random ins
 ## E1 — Training and inference stack on a tiny model (SPEC §6.5–§7; 1 GPU)
 Goal: the end-to-end pipeline works and is provably consistent before any expensive run.
 
-- [ ] **E1.1 Chat mapping and tokenization** (`train/chat.py`, D-002). Accept: target ids = action tokens + end-
+- [x] **E1.1 Chat mapping and tokenization** (`train/chat.py`, D-002). Accept: target ids = action tokens + end-
   of-turn id; decoding the ids returns the action string; prompts are identical across two processes with
   different system dates (Llama 3.1 `date_string` pinned); a test per supported backbone (Qwen2.5, Llama 3.1)
   using their tokenizers.
+  evidence: `pytest tests/train/test_chat.py -q -m ""` → 39 passed (Qwen2.5-0.5B/7B and Llama-3.1-8B tokenizers at
+  pinned revisions; target = action tokens + end of turn, exact decode; golden ids; two processes with faked years
+  2001/2031 and different hash seeds give identical prompt ids, and a clock-reading Llama template differs unpinned);
+  `make lint` → exit 0; spec-reviewer: no blocking findings (review of d7f0f7f, follow-up of 321a214: S1-S6 fixed),
+  last should-fix fixed in 8253e11 (D-022); commit 8253e11 (work: d7f0f7f, 321a214)
 - [ ] **E1.2 Scorer** (`train/scoring.py`). Accept: log π equals a manual per-token computation; batch and
   padding invariance within 1e-4 (bf16) / 1e-9 (float64 on CPU); eval mode asserted; token counts reported.
 - [ ] **E1.3 Two-pass trainer** (`train/trainer.py`, `train/methods.py`; LoRA via PEFT with dropout 0). Accept:
