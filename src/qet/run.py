@@ -292,7 +292,12 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory) -> tuple[di
     with open(out / "train_log.jsonl", "w", encoding="utf-8") as log:
 
         def logger(phase: str) -> Callable[[dict[str, Any]], None]:
-            return lambda row: log.write(json.dumps({"phase": phase, **row}) + "\n")
+            def write(row: dict[str, Any]) -> None:
+                if torch.cuda.is_available():  # the run's peak so far, which checks the memory sizing (D-024e)
+                    row = {**row, "max_memory_gib": torch.cuda.max_memory_allocated() / 2**30}
+                log.write(json.dumps({"phase": phase, **row}) + "\n")
+
+            return write
 
         if t is not None:
             model = add_lora(model, rank=t.lora_rank, alpha=t.lora_alpha, seed=cfg.seed)

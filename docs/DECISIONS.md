@@ -306,6 +306,15 @@ vocabulary-sized float32 logits. (e) Deferred to the M1.4 pilot: gradient checkp
 decoder layers in `torch.utils.checkpoint` itself; recomputation is exact without dropout), and the bf16 invariance
 test on each backbone that will be trained (Qwen2.5-7B-Instruct, Llama-3.1-8B-Instruct). Default: as described;
 cheap to reverse.
+Update 2026-10-18 (M1.4 sizing, `python scripts/size_activations.py --backbone <id>`): with LoRA on all linear
+layers and fp32 adapter weights (peft's default for a bf16 model, which also saves each adapter input as an fp32
+copy), one decoder layer saves 327.4 KiB per token for backward on Qwen2.5-7B-Instruct (8.95 MiB per token over 28
+layers) and 302.4 KiB on Llama-3.1-8B-Instruct (9.45 MiB over 32 layers); measured on CPU with autograd's
+saved-tensor hooks, weights and attention matrices excluded. A 16,384-position micro-batch would need 143 GiB (Qwen)
+or 151 GiB (Llama) of saved activations, more than one H200 (143,771 MiB), so the M1 pilot uses `max_tokens: 8192`
+(72 or 76 GiB, plus about 15 GiB of weights). Training logs record peak GPU memory per step, and the pilot checks
+this estimate. Gradient checkpointing stays deferred unless the pilot shows that 8,192-position micro-batches cost
+throughput. Engineering sizing, not a result.
 
 ### D-025 Runner details and what the smoke audit asks of M1
 `src/qet/run.py`, `manifest.py`, `runlog.py`, `scripts/make_tables.py` (E1.6, E1.7; results-auditor notes on the

@@ -25,7 +25,7 @@ train:
   max_grad_norm: 1.0
   k: 4
   s_max: 256
-  max_tokens: 16384
+  max_tokens: 8192  # about 72 GiB of saved activations on this backbone; 16384 would not fit one H200 (D-024e)
   max_target_tokens: 8192
   checkpoint_fractions: []
 eval:
