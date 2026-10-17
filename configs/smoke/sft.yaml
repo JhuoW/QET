@@ -1,0 +1,38 @@
+# E1.7 smoke run, configuration 2 (interface + demo-order SFT): Qwen2.5-0.5B-Instruct on the toy environment.
+# Sized for both smoke runs plus evaluation to fit in 30 minutes on one H200. No claims are drawn from smoke numbers.
+milestone: E1
+name: smoke-sft
+configuration: "2"
+seed: 0
+backbone: Qwen/Qwen2.5-0.5B-Instruct
+dtype: bfloat16
+data:
+  env: toy
+  kind: functions
+  params: {n_core: 4, n_given: 2, n_distractors: 2}
+  train: {start: 0, count: 256}
+  test: {start: 1000000, count: 16}
+  demo_seed: 0
+train:
+  token_budget: 4000000
+  warmup_steps: 10
+  lora_rank: 16
+  lora_alpha: 32
+  batch_graphs: 8
+  lr: 2.0e-4
+  warmup: 0.03
+  max_grad_norm: 1.0
+  k: 4
+  s_max: 256
+  max_tokens: 16384
+  max_target_tokens: 8192
+  checkpoint_fractions: [1.0]
+eval:
+  decoding:
+    - {mode: greedy}
+    - {mode: sample, temperature: 1.0, top_p: 1.0, samples: 8}
+  max_new_tokens: 64
+  resume_prefix_tasks: 8
+estimate:  # assumptions for the dry run's GPU-hour estimate, not measurements
+  train_tokens_per_second: 40000
+  eval_tokens_per_second: 1000

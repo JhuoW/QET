@@ -24,5 +24,6 @@ test-fast:
 test:
 	$(PYTHON) -m pytest tests reference -q $(if $(HAVE_GPU),,-m "not gpu")
 
+# Configurations 2 and 6 on the toy env, evaluation and a table; one GPU (qsub -o logs/pbs/ scripts/pbs/smoke.pbs).
 smoke:
-	@echo "make smoke is not implemented yet (docs/MILESTONES.md E1.7)" >&2; exit 1
+	$(PYTHON) scripts/smoke.py

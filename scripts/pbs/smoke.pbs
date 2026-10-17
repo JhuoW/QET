@@ -1,0 +1,24 @@
+#!/bin/bash
+# make smoke (E1.7) on one H200: configurations 2 and 6, evaluation and a table. Adapted from
+# ~/GPU_Usage/llm-base/validate.pbs; within D-021 (1 GPU, at most 1 h). Submit from the repository root:
+#   qsub -o logs/pbs/ scripts/pbs/smoke.pbs
+#PBS -N qet_smoke
+#PBS -P ccds_siqiang.luo
+#PBS -q gpu_ppu
+#PBS -l select=1:ncpus=12:ngpus=1
+#PBS -l walltime=01:00:00
+#PBS -j oe
+
+set -euo pipefail
+if type module >/dev/null 2>&1; then module purge; fi
+# Keep the scheduler's CUDA_VISIBLE_DEVICES; do not load the cluster's Python/PyTorch/CUDA modules.
+unset PYTHONPATH PYTHONHOME
+source "$HOME/anaconda3/etc/profile.d/conda.sh"
+conda activate base
+cd "$PBS_O_WORKDIR"
+export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4
+export TOKENIZERS_PARALLELISM=false HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 WANDB_MODE=disabled
+printf 'Job: %s\nHost: %s\nCommit: %s (dirty files: %s)\n' "$PBS_JOBID" "$(hostname)" "$(git rev-parse HEAD)" \
+    "$(git status --porcelain --untracked-files=no | wc -l)"
+nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
+make smoke
