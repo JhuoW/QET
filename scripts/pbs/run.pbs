@@ -23,11 +23,17 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True  # less fragmentation ne
 export TOKENIZERS_PARALLELISM=false HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 WANDB_MODE=disabled
 printf 'Job: %s\nHost: %s\nCommit: %s (dirty files: %s)\n' "$PBS_JOBID" "$(hostname)" "$(git rev-parse HEAD)" \
     "$(git status --porcelain --untracked-files=no | wc -l)"
-python -c 'import qet; print("qet from", qet.__file__)'
+PY=${QET_PYTHON:-python}
+$PY -c 'import qet; print("qet from", qet.__file__)'
 nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
-test -n "${CONFIG:-}" || { echo "set CONFIG with qsub -v CONFIG=..."; exit 2; }
-if [ -n "${MAIN:-}" ]; then
-  python -m qet.run --config "$CONFIG" --runlog "$MAIN/docs/RUNLOG.md"
+if [ -n "${SCRIPT:-}" ]; then
+  # shellcheck disable=SC2086  # ARGS is a list of words
+  $PY "$SCRIPT" $ARGS --runlog "$MAIN/docs/RUNLOG.md"
 else
-  python -m qet.run --config "$CONFIG"
+  test -n "${CONFIG:-}" || { echo "set CONFIG with qsub -v CONFIG=..."; exit 2; }
+  if [ -n "${MAIN:-}" ]; then
+    $PY -m qet.run --config "$CONFIG" --runlog "$MAIN/docs/RUNLOG.md"
+  else
+    $PY -m qet.run --config "$CONFIG"
+  fi
 fi
