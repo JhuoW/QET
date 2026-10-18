@@ -24,6 +24,15 @@ export TOKENIZERS_PARALLELISM=false HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 WANDB
 printf 'Job: %s\nHost: %s\nCommit: %s (dirty files: %s)\n' "$PBS_JOBID" "$(hostname)" "$(git rev-parse HEAD)" \
     "$(git status --porcelain --untracked-files=no | wc -l)"
 PY=${QET_PYTHON:-python}
+# PBS names the GPU by UUID; vLLM 0.11 parses device ids as integers. Use the GPU's position in PCI bus order among
+# the GPUs this job can see (one here), which names the same device for torch and vLLM.
+if [[ "${CUDA_VISIBLE_DEVICES:-}" == GPU-* ]]; then
+  export CUDA_DEVICE_ORDER=PCI_BUS_ID
+  CUDA_VISIBLE_DEVICES=$(nvidia-smi --query-gpu=uuid --format=csv,noheader |
+    awk -v u="$CUDA_VISIBLE_DEVICES" '{ if ($1 == u) i = NR - 1 } END { print i }')
+  export CUDA_VISIBLE_DEVICES
+  echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES (from the scheduler's UUID)"
+fi
 $PY -c 'import qet; print("qet from", qet.__file__)'
 nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
 if [ -n "${SCRIPT:-}" ]; then

@@ -26,7 +26,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-018 | Proposed | Lattice and weight details left open by SPEC §6, §8 |
 | D-019 | Proposed | Repeat numbering per identical call; steps carry an observation |
 | D-020 | Proposed | Guards for later milestones (task constraints, inference canonicalization) |
-| D-021 | Accepted | Compute and access policy until the human sets a budget (M1 budget set, D-030) |
+| D-021 | Proposed | Compute and access policy until the human sets a budget (M1 budget set, D-030) |
 | D-022 | Proposed | Chat details left open by SPEC §6.7 and D-002 |
 | D-023 | Proposed | Trainer details left open by SPEC §6.5, §8 and D-009 |
 | D-024 | Proposed | Scorer details left open by SPEC §6.7 |
@@ -231,6 +231,9 @@ third_party/ and to set a GPU budget for the M1.4 pilot and later runs, the huma
 the submodule and the plan to do M1.1-M1.4 with the M1.4 throughput pilot inside the per-job cap (1 GPU, at most 1
 h); the run matrix still waits for a budget at Gate A. Update 2026-10-18: at Gate A the human set the M1 training budget
 (D-030a), which is the batch approval for the M1.5 and M1.6 runs; evaluation spending still waits for its own budget.
+Update 2026-10-18: the Llama-3.1-8B-Instruct weights were not in the cache (the three Llama warm-up jobs failed at model
+load); asked, the human answered "Yes, download", and the pinned revision was fetched with the cached HF token
+(scripts/fetch_models.py --weights).
 
 ### D-022 Chat details left open by SPEC §6.7 and D-002
 `src/qet/train/chat.py`. (a) Each backbone is pinned to one Hugging Face commit, which fixes weights, tokenizer and
