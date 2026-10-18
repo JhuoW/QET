@@ -4,6 +4,8 @@
 #   scripts/pbs/submit.sh configs/<milestone>/<name>.yaml [HH:MM:SS walltime, default 01:00:00]
 # or a script that writes its own run folder and takes --runlog (e.g. scripts/vllm_check.py):
 #   scripts/pbs/submit.sh --script SCRIPT [--args "ARGS"] [--python PYTHON] [--walltime HH:MM:SS] [--after JOB]
+# or the option form of one config (needed with --after):
+#   scripts/pbs/submit.sh --config CONFIG [--walltime HH:MM:SS] [--after JOB]
 # or several configs in one job, one after another (an evaluation batch sharing one vLLM engine):
 #   scripts/pbs/submit.sh --batch FILE [--python PYTHON] [--walltime HH:MM:SS] [--after JOB]
 # GPU limit (the human, 2026-10-18, D-034): at most 2 jobs running or queued at once. --after JOB queues the job
@@ -15,9 +17,10 @@ set -euo pipefail
 main=$(git rev-parse --show-toplevel)
 cd "$main"
 config="" script="" args="" batch="" after="" python="python" walltime=01:00:00
-if [ "${1:-}" = "--script" ] || [ "${1:-}" = "--batch" ]; then
+if [ "${1:-}" = "--script" ] || [ "${1:-}" = "--batch" ] || [ "${1:-}" = "--config" ]; then
   while [ $# -gt 0 ]; do
     case "$1" in
+      --config) config=$2; shift 2 ;;
       --script) script=$2; shift 2 ;;
       --batch) batch=$2; shift 2 ;;
       --args) args=$2; shift 2 ;;
