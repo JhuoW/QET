@@ -1,0 +1,4 @@
+configs/m1/eval-c3-llama8b-full-s0.yaml
+configs/m1/eval-c3-llama8b-frac0.25-s0.yaml
+configs/m1/eval-c3-llama8b-frac0.5-s0.yaml
+configs/m1/eval-c3-llama8b-frac0.75-s0.yaml

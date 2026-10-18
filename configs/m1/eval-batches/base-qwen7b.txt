@@ -1,0 +1,2 @@
+configs/m1/eval-base-qwen7b-full-s0.yaml
+configs/m1/eval-base-qwen7b-toolhop-s0.yaml

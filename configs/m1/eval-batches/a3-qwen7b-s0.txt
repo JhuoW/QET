@@ -1,0 +1,4 @@
+configs/m1/eval-a3-qwen7b-full-s0.yaml
+configs/m1/eval-a3-qwen7b-frac0.25-s0.yaml
+configs/m1/eval-a3-qwen7b-frac0.5-s0.yaml
+configs/m1/eval-a3-qwen7b-frac0.75-s0.yaml
