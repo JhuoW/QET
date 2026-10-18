@@ -1,0 +1,4 @@
+# M1.7 extras: the data curve's 224-graph runs (D-033a revised), appended to the two chains after the stateful runs
+# (D-034); each from the 224-graph warm-up M1-warmup-quotient-qwen7b-n224-s0-20261018T145731Z
+config configs/m1/train-c6-qwen7b-n224-s0.yaml 08:00:00
+config configs/m1/train-c2-qwen7b-n224-s0.yaml 08:00:00
