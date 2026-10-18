@@ -59,6 +59,7 @@ class DryRunCache:
         self.formats: dict[str, Any] = {}
         self.prompts: dict[tuple, dict] = {}
         self.targets: dict[str, dict] = {}
+        self.eval_prompts: dict[tuple, dict] = {}  # per evaluation task: prompt tokens along its demo path
 
     def dataset(self, data: Any, limit: int | None) -> Any:
         from qet.datasets import build_dataset
@@ -141,18 +142,23 @@ def plan(cfg: RunConfig, *, limit: int | None = None, cache: DryRunCache | None 
         }  # fmt: skip
     episodes = eval_tokens = 0
     task_x = {t.task_id: t.public() for t in ds.test_tasks}
-    per_task = {}
+    key = (cfg.backbone, m.renderer, repr(cfg.data), json.dumps(cfg.data.truncation, sort_keys=True))
+    prompts_of = cache.eval_prompts.setdefault(key, {})  # shared by dry runs of the same tasks and renderer
     if not ds.test_records:  # no compiled demonstrations (ToolHop): the empty-state prompt for every step
         for task in ds.test_tasks:
-            first = len(fmt.prompt_ids(render_messages(task_x[task.task_id], [], ds.contracts, m.renderer,
-                                                       cfg.data.truncation)))  # fmt: skip
-            n = getattr(task, "chain", ds.make_env(task).step_budget())
-            per_task[task.task_id] = ([first] * (n + 1), first * (n + 1) + (n + 1) * cfg.eval.max_new_tokens)
+            if task.task_id not in prompts_of:
+                first = len(fmt.prompt_ids(render_messages(task_x[task.task_id], [], ds.contracts, m.renderer,
+                                                           cfg.data.truncation)))  # fmt: skip
+                n = getattr(task, "chain", ds.make_env(task).step_budget())
+                prompts_of[task.task_id] = [first] * (n + 1)
     for rec in ds.test_records:  # prompt tokens along the demo path, one generation per step
-        steps = rec.steps()
-        prompts = [len(fmt.prompt_ids(render_messages(task_x[rec.task_id], steps[:k], ds.contracts, m.renderer,
-                                                      cfg.data.truncation))) for k in range(rec.n + 1)]  # fmt: skip
-        per_task[rec.task_id] = (prompts, sum(prompts) + (rec.n + 1) * cfg.eval.max_new_tokens)
+        if rec.task_id not in prompts_of:
+            steps = rec.steps()
+            msgs = [render_messages(task_x[rec.task_id], steps[:k], ds.contracts, m.renderer, cfg.data.truncation)
+                    for k in range(rec.n + 1)]  # fmt: skip
+            prompts_of[rec.task_id] = [len(fmt.prompt_ids(x)) for x in msgs]
+    per_task = {t.task_id: (prompts_of[t.task_id], sum(prompts_of[t.task_id]) + len(prompts_of[t.task_id])
+                            * cfg.eval.max_new_tokens) for t in ds.test_tasks}  # fmt: skip
     if cfg.train and cfg.train.warmup_only:  # no episodes; each format check acts once per sampled state (D-010)
         fc = cfg.train.format_check or {"at": [], "tasks": 0}
         checked = list(per_task.values())[: int(fc["tasks"])]
