@@ -433,3 +433,13 @@ def test_an_evaluation_only_run_loads_a_checked_checkpoint(tmp_path):
 def test_a_checkpoint_belongs_to_evaluation_only_runs(tmp_path):
     with pytest.raises(ValueError, match="evaluation-only"):
         small_config(tmp_path, checkpoint={"run": "x", "label": "frac-1"})  # it keeps its train section
+
+
+def test_the_vllm_backend_is_for_evaluation_only_runs(tmp_path):
+    with pytest.raises(ValueError, match="evaluation-only"):
+        small_config(tmp_path, eval={"decoding": [{"mode": "greedy"}], "backend": "vllm"})
+    with pytest.raises(ValueError, match="backend"):
+        small_config(tmp_path, train=None, eval={"decoding": [{"mode": "greedy"}], "backend": "jax"})
+    cfg = small_config(tmp_path, train=None, eval={"decoding": [{"mode": "greedy"}], "backend": "vllm",
+                                                   "batch_episodes": 64})  # fmt: skip
+    assert (cfg.eval.backend, cfg.eval.batch_episodes, cfg.train) == ("vllm", 64, None)

@@ -121,3 +121,50 @@ def test_summarize():
     assert r["off_path_gap"] == 1.0 and r["by_condition_and_depth"]["on_path@1"]["episodes"] == 1
     with pytest.raises(ValueError, match="different numbers of rollouts"):
         summarize([row("a", "s", True), row("a", "s", True), row("b", "s", True)])
+
+
+class Oracle:
+    """A stateless policy: the demonstration's next action at every state on the demo path, invalid text elsewhere.
+    The batch flavour answers several prompts at once with the same function (D-026b's batched evaluation)."""
+
+    def __init__(self, fmt, tasks):
+        from qet.core.render import render_messages
+        from qet.infer.decoding import Generation
+
+        self.fmt, self.Generation, self.table = fmt, Generation, {}
+        for toy in tasks:
+            record, _ = compile_toy(toy)
+            steps, x = record.steps(), toy.public()
+            for k in range(record.n + 1):
+                ids = fmt.prompt_ids(render_messages(x, steps[:k], toy.contracts, "quotient"))
+                node = record.nodes[k] if k < record.n else record.final
+                tool, args = (node.tool, node.args) if k < record.n else (node["tool"], node["args"])
+                self.table[tuple(ids)] = action_string(tool, args)
+
+    def generate(self, prompt_ids, seed):
+        text = self.table.get(tuple(prompt_ids), "not an action")
+        return self.Generation(self.fmt.encode(text) + [self.fmt.eot_id], True, 0.0)
+
+
+class BatchOracle(Oracle):
+    def generate_batch(self, prompts, seeds):
+        return [self.generate(p, s) for p, s in zip(prompts, seeds, strict=True)]
+
+
+def test_batched_evaluation_writes_the_same_rows(fmt):
+    from qet.config import EvalSettings
+    from qet.eval.runner import evaluate_tasks
+
+    tasks = make_tasks("functions", range(5), n_core=4, n_given=2) + make_tasks("stateful", range(3))
+    settings = EvalSettings(({"mode": "greedy"}, {"mode": "sample", "samples": 3}), max_new_tokens=64)
+    rows = {}
+    for kind, cls in (("one", Oracle), ("batch", BatchOracle)):
+        policy, out = cls(fmt, tasks), []
+        evaluate_tasks(tasks, ToyEnv, lambda d, p=policy: p, fmt, settings, renderer="quotient", truncation=None,
+                       run_seed=0, on_episode=out.append, width=4)  # fmt: skip
+        records = [compile_toy(t)[0] for t in tasks]
+        evaluate_resume(records, {t.task_id: t for t in tasks}, ToyEnv, policy, fmt, decoding="greedy",
+                        renderer="quotient", truncation=None, run_seed=0, on_episode=out.append, width=3)  # fmt: skip
+        rows[kind] = out
+    assert rows["batch"] == rows["one"] and len(rows["one"]) > 4 * len(tasks)
+    assert {r["end"] for r in rows["one"]} >= {"finish", "invalid_action"}  # off-path starts leave the demo path

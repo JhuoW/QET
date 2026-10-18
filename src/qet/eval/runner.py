@@ -8,7 +8,7 @@ from typing import Any
 
 from qet.config import EvalSettings
 from qet.envs.base import Environment
-from qet.infer.agent import Policy, run_episode
+from qet.infer.agent import EpisodeState, Policy, run_episode, run_rolling
 from qet.infer.decoding import DecodeConfig
 from qet.train.chat import ChatFormat
 
@@ -40,16 +40,27 @@ def evaluate_tasks(
     truncation: Mapping[str, Any] | None,
     run_seed: int,
     on_episode: Callable[[dict[str, Any]], None],
+    width: int = 256,
 ) -> None:
-    """Run every task from the empty state under every decoding setting."""
+    """Run every task from the empty state under every decoding setting, task by task with its rollouts in order. A
+    batch policy (vLLM, D-026b) runs up to `width` episodes per round; the rows come out in the same order."""
     tasks = list(tasks)
     for name, cfg, rollouts in decoding_settings(settings):
         policy = policy_for(cfg)
+
+        def emit(ep: Any, name: str = name) -> None:
+            on_episode({"decoding": name, "condition": "standard", "depth": 0, **ep.to_json()})
+
+        if hasattr(policy, "generate_batch"):
+            jobs = [lambda t=task, r=r: EpisodeState(make_env(t), fmt, renderer=renderer, truncation=truncation,
+                                                    rollout=r, run_seed=run_seed)
+                    for task in tasks for r in range(rollouts)]  # fmt: skip
+            run_rolling(jobs, policy, width, lambda _, ep: emit(ep))
+            continue
         for task in tasks:
             for r in range(rollouts):
-                ep = run_episode(make_env(task), policy, fmt, renderer=renderer, truncation=truncation, rollout=r,
-                                 run_seed=run_seed)  # fmt: skip
-                on_episode({"decoding": name, "condition": "standard", "depth": 0, **ep.to_json()})
+                emit(run_episode(make_env(task), policy, fmt, renderer=renderer, truncation=truncation, rollout=r,
+                                 run_seed=run_seed))  # fmt: skip
 
 
 def rows_by_task(rows: Sequence[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:

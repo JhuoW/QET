@@ -101,7 +101,18 @@ def hardware() -> dict[str, Any]:
 
 def libraries() -> dict[str, str | None]:
     out: dict[str, str | None] = {"python": platform.python_version()}
-    for lib in ("qet", "torch", "transformers", "tokenizers", "peft", "accelerate", "numpy", "pyyaml", "jinja2"):
+    for lib in (
+        "qet",
+        "torch",
+        "transformers",
+        "tokenizers",
+        "peft",
+        "accelerate",
+        "numpy",
+        "pyyaml",
+        "jinja2",
+        "vllm",
+    ):
         try:
             out[lib] = version(lib)
         except PackageNotFoundError:

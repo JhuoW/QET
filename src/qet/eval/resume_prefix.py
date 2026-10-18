@@ -16,7 +16,7 @@ from typing import Any
 from qet.core.compile import GraphRecord
 from qet.core.lattice import node_masks, random_topological_order
 from qet.envs.base import Environment, run_calls
-from qet.infer.agent import Policy, run_episode
+from qet.infer.agent import EpisodeState, Policy, run_episode, run_rolling
 from qet.train.chat import ChatFormat
 
 
@@ -61,13 +61,27 @@ def evaluate_resume(
     run_seed: int,
     on_episode: Callable[[dict[str, Any]], None],
     start_seed: int = 0,
+    width: int = 256,
 ) -> None:
-    """`start_seed` fixes the starts (the evaluation seed: the same for every training seed); `run_seed` decoding."""
-    for record in records:
-        for start in starts(record, start_seed):
-            env = make_env(tasks_by_id[record.task_id])
-            prefix = restore(env, record, start)
-            ep = run_episode(env, policy, fmt, renderer=renderer, truncation=truncation, prefix=prefix,
-                             run_seed=run_seed)  # fmt: skip
-            on_episode({"decoding": decoding, "condition": start.condition, "depth": start.depth,
-                        "prefix_order": list(start.order), **ep.to_json()})  # fmt: skip
+    """`start_seed` fixes the starts (the evaluation seed: the same for every training seed); `run_seed` decoding. A
+    batch policy runs up to `width` episodes per round; the rows come out in the same order."""
+    work = [(record, start) for record in records for start in starts(record, start_seed)]
+
+    def begin(record: GraphRecord, start: Start) -> EpisodeState:
+        env = make_env(tasks_by_id[record.task_id])
+        prefix = restore(env, record, start)
+        return EpisodeState(env, fmt, renderer=renderer, truncation=truncation, prefix=prefix, run_seed=run_seed)
+
+    def emit(i: int, ep: Any) -> None:
+        start = work[i][1]
+        on_episode({"decoding": decoding, "condition": start.condition, "depth": start.depth,
+                    "prefix_order": list(start.order), **ep.to_json()})  # fmt: skip
+
+    if hasattr(policy, "generate_batch"):
+        run_rolling([lambda r=r, s=s: begin(r, s) for r, s in work], policy, width, emit)
+        return
+    for i, (record, start) in enumerate(work):
+        env = make_env(tasks_by_id[record.task_id])
+        prefix = restore(env, record, start)
+        emit(i, run_episode(env, policy, fmt, renderer=renderer, truncation=truncation, prefix=prefix,
+                            run_seed=run_seed))  # fmt: skip

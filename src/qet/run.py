@@ -380,8 +380,9 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory, parent=None
     clock = time.perf_counter()
     seconds: dict[str, float] = {}
     torch.manual_seed(cfg.seed)
-    model = (model_factory or load_model)(cfg)
-    if evaluated is not None:  # checked against its training run's manifest by checkpoint_record
+    vllm = cfg.eval.backend == "vllm"  # evaluation-only: the engine loads the backbone (and adapter) itself
+    model = None if vllm else (model_factory or load_model)(cfg)
+    if evaluated is not None and not vllm:  # checked against its training run's manifest by checkpoint_record
         from peft import PeftModel
 
         path = Path(evaluated["path"]) if Path(evaluated["path"]).is_absolute() else REPO / evaluated["path"]
@@ -482,8 +483,22 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory, parent=None
         rows.append(row)
 
     try:
-        policy_for = lambda d: HFSampler(model, fmt.eot_id, d)  # noqa: E731
-        common = {"renderer": m.renderer, "truncation": cfg.data.truncation, "run_seed": cfg.seed, "on_episode": keep}
+        if vllm:
+            from qet.infer.vllm_sampler import VLLMSampler, make_llm
+            from qet.train.chat import backbone
+
+            b = backbone(cfg.backbone)
+            lora = None
+            if evaluated is not None:
+                lora = str(
+                    Path(evaluated["path"]) if Path(evaluated["path"]).is_absolute() else REPO / evaluated["path"]
+                )
+            llm = make_llm(b.model_id, b.revision, lora=lora is not None, seed=cfg.seed)
+            policy_for = lambda d: VLLMSampler(llm, fmt.eot_id, d, lora)  # noqa: E731
+        else:
+            policy_for = lambda d: HFSampler(model, fmt.eot_id, d)  # noqa: E731
+        common = {"renderer": m.renderer, "truncation": cfg.data.truncation, "run_seed": cfg.seed, "on_episode": keep,
+                  "width": cfg.eval.batch_episodes}  # fmt: skip
         evaluate_tasks(ds.test_tasks, ds.make_env, policy_for, fmt, cfg.eval, **common)
         if cfg.eval.resume_prefix_tasks:
             settings = decoding_settings(cfg.eval)

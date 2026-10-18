@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from typing import Any, Protocol
 
@@ -207,3 +207,46 @@ def run_episodes(states: Sequence[EpisodeState], policy: Policy | BatchPolicy) -
         for (s, _), gen in zip(live, gens, strict=True):
             s.advance(gen)
     return [s.episode for s in states]
+
+
+def run_rolling(
+    jobs: Sequence[Callable[[], EpisodeState]],
+    policy: Policy | BatchPolicy,
+    width: int,
+    on_done: Callable[[int, Episode], None],
+) -> None:
+    """Episodes in lockstep rounds with at most `width` running: a finished episode's place goes to the next job, so
+    long episodes do not leave the batch idle. `jobs[i]()` starts job i (its environment is made then); `on_done(i,
+    episode)` is called in job order. Same rules and outputs as `run_episodes`."""
+    if width < 1:
+        raise ValueError("width must be at least 1")
+    batch = getattr(policy, "generate_batch", None)
+    queue = iter(enumerate(jobs))
+    live: list[tuple[int, EpisodeState]] = []
+    finished: dict[int, Episode] = {}
+    emitted = 0
+    more = True
+    while more or live:
+        while more and len(live) < width:
+            nxt = next(queue, None)
+            if nxt is None:
+                more = False
+            else:
+                live.append((nxt[0], nxt[1]()))
+        round_ = [(i, s, ids) for i, s in live if (ids := s.prompt()) is not None]
+        if round_:
+            prompts, seeds = [ids for _, _, ids in round_], [s.seed() for _, s, _ in round_]
+            gens = (
+                batch(prompts, seeds)
+                if batch
+                else [policy.generate(p, sd) for p, sd in zip(prompts, seeds, strict=True)]
+            )
+            for (_, s, _), gen in zip(round_, gens, strict=True):
+                s.advance(gen)
+        for i, s in live:
+            if s.done:
+                finished[i] = s.episode
+        live = [(i, s) for i, s in live if not s.done]
+        while emitted in finished:
+            on_done(emitted, finished.pop(emitted))
+            emitted += 1

@@ -78,6 +78,8 @@ class EvalSettings:
     max_new_tokens: int = 128
     resume_prefix_tasks: int = 0  # test tasks evaluated from legal prefixes (EVAL_PLAN §6); 0 = none
     eval_seed: int = 0  # seeds the Resume@prefix starts: the same for every training seed of a comparison
+    backend: str = "hf"  # "hf": one sequence at a time; "vllm": batched (D-026b), evaluation-only runs
+    batch_episodes: int = 256  # vllm: episodes decoded per round
 
 
 @dataclass(frozen=True)
@@ -169,7 +171,9 @@ def load_config(path: str | Path) -> RunConfig:
                 raise ValueError("train.format_check: tasks and states_per_task must be positive")
 
     e = data["eval"]
-    _check_keys("eval", e, {"decoding"}, {"max_new_tokens", "resume_prefix_tasks", "eval_seed"})
+    _check_keys(
+        "eval", e, {"decoding"}, {"max_new_tokens", "resume_prefix_tasks", "eval_seed", "backend", "batch_episodes"}
+    )
     decoding = tuple(dict(x) for x in e["decoding"])
     if not decoding:
         raise ValueError("eval.decoding needs at least one setting")
@@ -183,7 +187,12 @@ def load_config(path: str | Path) -> RunConfig:
         if not float(x.get("temperature", 1.0)) > 0 or not 0 < float(x.get("top_p", 1.0)) <= 1:
             raise ValueError("decoding needs temperature > 0 and 0 < top_p <= 1")
     eval_cfg = EvalSettings(decoding, int(e.get("max_new_tokens", 128)), int(e.get("resume_prefix_tasks", 0)),
-                            int(e.get("eval_seed", 0)))  # fmt: skip
+                            int(e.get("eval_seed", 0)), str(e.get("backend", "hf")),
+                            int(e.get("batch_episodes", 256)))  # fmt: skip
+    if eval_cfg.backend not in ("hf", "vllm") or eval_cfg.batch_episodes < 1:
+        raise ValueError("eval: backend is hf or vllm, and batch_episodes is positive")
+    if eval_cfg.backend == "vllm" and train is not None:
+        raise ValueError("eval.backend vllm is for evaluation-only runs (no train section)")
     if train is not None and train.warmup_only and eval_cfg.resume_prefix_tasks:
         raise ValueError("a warm-up run evaluates by its format checks only (resume_prefix_tasks must be 0)")
     checkpoint = data.get("checkpoint")
