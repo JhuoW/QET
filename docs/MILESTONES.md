@@ -179,7 +179,18 @@ Goal: the end-to-end pipeline works and is provably consistent before any expens
   88116-88118 after the human approved the download) → 10 completed warm-up runs, one per renderer, backbone and seed
   (5 steps, 0.53-0.63M tokens, 0.08-0.09 GPU-hours each; checkpoint files match their manifests; RUNLOG rows); the 33
   training configs name them as parents; results-auditor: PASS WITH NOTES; commit 19eadf6
-- [ ] **M1.6 Training runs** (EVAL_PLAN §4, ≈ 33), each through `/run-experiment` with matched compute.
+- [x] **M1.6 Training runs** (EVAL_PLAN §4, ≈ 33), each through `/run-experiment` with matched compute.
+  evidence: `python scripts/make_m1_configs.py train` → the 33 training configs (dry runs pass), each naming its M1.5
+  warm-up as parent; `scripts/pbs/submit.sh configs/m1/train-<name>.yaml 08:00:00` per config, after the dry run (jobs
+  88126-88127 as a staged check, then 88154-88176 and 88181-88188; pinned checkouts at 41bd2f5, f508d81 and 05257b6,
+  D-025b) → 33 completed runs results/raw/M1-<configuration>-<backbone>-s<seed>-<stamp> (clean, no code change during
+  any run, training records of M1-compile-20261018T023058Z, no test data; RUNLOG rows, commit 5043b5a): budget_used
+  125,002,285-125,775,259 tokens for B = 125M (last-step overshoot at most 0.62%, D-023f), parent tokens counted, four
+  checkpoints per run at 25/50/75/100% of B with hashes matching their manifests, no non-finite objective;
+  `python scripts/m1_projection.py` → 134.9 billed GPU-hours for the 33 runs + 1.41 for the M1.5 warm-ups = 136.3,
+  107.3% of the Gate A projection (guard 110%, D-030a); results-auditor: PASS with one blocking correction (the total
+  first read 136.5 because the script also counted the M1.7 extras' warm-ups; scope fixed and the figure re-traced);
+  commit 189427e
 - [ ] **M1.7 Evaluation**: blocks A–D on FuncBenchGen; ToolHop for the base model and configurations 2 and 6;
   Resume@prefix; injected false-independence ablation; compute and data curves.
 - [ ] **GATE B** (`--gate B` → `docs/reports/gate-B.md`): each falsification criterion with its interval and
