@@ -32,6 +32,7 @@ class EvalRun:
     resume: list[dict[str, Any]] = field(default_factory=list)  # Resume@prefix rows
     variant: str = ""  # "" for the main matrix; n1250, n2500, fi, stateful (D-033); "base" for a base model
     episodes: dict[str, int] = field(default_factory=dict)  # prediction file -> rows
+    trained_from: str | None = None  # the training run of the evaluated checkpoint; None for a base model
 
 
 def variant_of(training_run_id: str | None) -> str:
@@ -57,7 +58,8 @@ def load_runs(paths: Iterable[Path]) -> list[EvalRun]:
         split = (spec.get("eval") or {}).get("split") or spec.get("env")
         ck = m.get("evaluated_checkpoint")
         run = EvalRun(m["run_id"], m["configuration"]["id"], m["backbone"]["id"], m["seed"], split,
-                      ck["label"] if ck else None, variant=variant_of(ck["run_id"] if ck else None))  # fmt: skip
+                      ck["label"] if ck else None, variant=variant_of(ck["run_id"] if ck else None),
+                      trained_from=ck["run_id"] if ck else None)  # fmt: skip
         for f in sorted((folder / "predictions").glob("*.jsonl")):
             lines = f.read_text(encoding="utf-8").splitlines()
             run.episodes[f.stem] = len(lines)

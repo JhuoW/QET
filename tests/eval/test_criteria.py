@@ -105,7 +105,15 @@ def test_the_gate_b_report_quotes_the_criteria_and_computes_them():
             r.resume = resume_rows({"3": 0.3, "5": 0.3, "6": 0.05}[r.configuration], r.seed, r.configuration)
     widths = {t: (5 if i % 2 else 2) for i, t in enumerate(TASKS)}
     section = "## 9. Falsification criteria\nCommon terms: ...\n1. Greedy success on graphs of measured width >= 3: ..."
-    text = gate_report.gate_b(runs, widths, section, [("x", "0" * 64)], resamples=500)
+    for r in runs:
+        r.trained_from = f"M1-c{r.configuration}-qwen7b-s{r.seed}-20261018T000000Z"
+    log = [{"phase": "train", "graphs": ["g1", "g2"]}, {"phase": "train", "graphs": ["g2", "g3"]}]
+    one = gate_report.exposure({"budgets": {"train": {"token_budget": 100}}, "tokens": {"budget_used": 101}}, log,
+                               {"spec": {"train": {"count": 8}}})  # fmt: skip
+    assert one == {"budget": 100, "used": 101, "graphs": 8, "seen": 3, "visits": 4}
+    training = {r.trained_from: one for r in runs}
+    text = gate_report.gate_b(runs, widths, section, [("x", "0" * 64)], resamples=500, training=training)
     assert section in text and "| 1 | 6 - 3 |" in text and "| 2 | 2 - 1 |" in text and "| 3 | gap 3 - gap 6 |" in text
     assert "Criterion 1: the objective claim holds" in text and "Criterion 3: claim C4 holds" in text
     assert "## 4. Resume@prefix" in text and "**STOP.**" in text and "does not carry" not in text
+    assert "| Qwen2.5-7B-Instruct | main configuration 6 | 3 | 1.0100-1.0100 | 1.00% | 3-3 | 8 | 0.50-0.50 |" in text

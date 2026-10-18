@@ -467,10 +467,19 @@ def bin_of(w: int) -> str:
     return "1" if w == 1 else "2" if w == 2 else "3-4" if w <= 4 else "5+"
 
 
+def exposure(manifest: dict, log: list[dict], data: dict) -> dict:
+    """What one training run consumed: its tokens against B and the training graphs it trained on (graph ids of the
+    train log). At matched compute the configurations see different numbers of graphs; disclosed with the results."""
+    visits = [g for r in log if r["phase"] == "train" for g in r["graphs"]]
+    return {"budget": manifest["budgets"]["train"]["token_budget"], "used": manifest["tokens"]["budget_used"],
+            "graphs": data["spec"]["train"]["count"], "seen": len(set(visits)), "visits": len(visits)}  # fmt: skip
+
+
 def gate_b(runs: list, widths: dict[str, int], plan_section: str, sources: list[tuple[str, str]],
-           resamples: int = 10_000) -> str:  # fmt: skip
+           resamples: int = 10_000, training: dict[str, dict] | None = None) -> str:  # fmt: skip
     """The Gate B report (MILESTONES M1): each criterion of EVAL_PLAN §9 verbatim with its estimate, 95% interval and
-    verdict, then descriptive tables, all from the evaluation runs' saved predictions."""
+    verdict, then descriptive tables, all from the evaluation runs' saved predictions; `training` maps the evaluated
+    checkpoints' training runs to their `exposure`."""
     from qet.eval.criteria import by_seed, criterion_1, criterion_2, criterion_3, gaps
     from qet.eval.metrics import pass_k
     from qet.eval.stats import cluster_bootstrap, task_means
@@ -631,9 +640,31 @@ def gate_b(runs: list, widths: dict[str, int], plan_section: str, sources: list[
         out.append(f"| {name} | {r.split} | {len(group)} | {sum(g) / len(g):.3f} | "
                    f"{sum(sp) / len(sp):.3f} |" if g and sp
                    else f"| {name} | {r.split} | {len(group)} | – | – |")  # fmt: skip
+    out.append("")
+    groups: dict[tuple[str, str, str], set[str]] = {}
+    for r in runs:
+        if r.trained_from in (training or {}):
+            groups.setdefault((r.backbone, r.variant, r.configuration), set()).add(r.trained_from)
+    if groups:
+        out += ["## 8. Training exposure at matched compute", "",
+                "Every run spends the same budget B of scored + gradient tokens (EVAL_PLAN §8), so a configuration "
+                "that scores more states per graph trains on fewer distinct graphs. Read from the training run of "
+                "each evaluated checkpoint: tokens used against B (the last step overshoots it, D-023f) from its "
+                "manifest, graphs from its train log.", "",
+                "| backbone | run | seeds | tokens used / B | largest overshoot | distinct graphs trained on | "
+                "training graphs | passes over the training graphs |",
+                "| --- | --- | --- | --- | --- | --- | --- | --- |"]  # fmt: skip
+        for (b, v, c), ids in sorted(groups.items()):
+            xs = [training[i] for i in sorted(ids)] if training else []
+            used = [x["used"] / x["budget"] for x in xs]
+            seen = [x["seen"] for x in xs]
+            passes = [x["visits"] / x["graphs"] for x in xs]
+            out.append(f"| {b.split('/')[1]} | {v or 'main'} configuration {c} | {len(xs)} | "
+                       f"{min(used):.4f}-{max(used):.4f} | {pct(max(used) - 1, 2)} | {min(seen):,}-{max(seen):,} | "
+                       f"{xs[0]['graphs']:,} | {min(passes):.2f}-{max(passes):.2f} |")  # fmt: skip
+        out.append("")
     out += [
-        "",
-        "## 8. Decision for the human",
+        "## 9. Decision for the human",
         "",
         "Whether M2 runs (MILESTONES GATE B). **STOP.** The agent starts no M2 work before the human decides.",
         "",
@@ -670,7 +701,13 @@ def main(argv: list[str] | None = None) -> None:
         plan = (REPO / "docs" / "EVAL_PLAN.md").read_text(encoding="utf-8")
         src.file(REPO / "docs" / "EVAL_PLAN.md")
         section = plan[plan.index("## 9.") : plan.index("## 10.")]
-        text = gate_b(load_runs(folders), widths, section, src.files)
+        runs = load_runs(folders)
+        training = {}
+        for run_id in sorted({r.trained_from for r in runs if r.trained_from}):
+            folder = RAW / run_id
+            training[run_id] = exposure(src.json(folder / "manifest.json"), src.lines(folder / "train_log.jsonl"),
+                                        src.json(folder / "data" / "data_manifest.json"))  # fmt: skip
+        text = gate_b(runs, widths, section, src.files, training=training)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(text, encoding="utf-8")
         print(args.out)
