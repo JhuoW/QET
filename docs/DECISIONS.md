@@ -545,6 +545,10 @@ their transitive reduction (`inject_false_independence`, rate 0.5, seed 0): a tr
 its ends, so the lattice trains on some orders that are illegal in truth. It is compared with train-c6-qwen7b-s0 on the
 frozen test set. Evaluation as in D-032 for configuration 6. Cost: about 19 GPU-hours of training (five runs) plus
 evaluation. Default: as described; cheap to reverse before the runs start.
+(c) Stateful extension (D-028c), decided by the human after the sizing (dry runs: 9.1M tokens per epoch over the 1,200
+training tasks for configuration 2, 63.4M for configuration 6): configurations 2 and 6 on Qwen, seeds 0-2, B = 25M
+tokens ("B = 25M, 3 seeds"), each from a 5-step warm-up on the stateful training split, evaluated on the 120 stateful
+test tasks with greedy and 8 samples; about 6 GPU-hours estimated.
 
 ### D-034 At most 2 GPUs at once (the human, 2026-10-18)
 After the 31 remaining training runs were submitted together (D-031a), 34 GPUs ran at once and the human's quota dropped
