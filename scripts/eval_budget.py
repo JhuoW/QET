@@ -77,8 +77,8 @@ def main(argv: list[str] | None = None) -> None:
     for mode in ("one_depth", "all_depths"):
         rows.append(("C", f"Resume@prefix ({mode}), greedy, all 2,240 test tasks, configurations 1, 2, 3, 5, 6 x 3 "
                      "seeds (Qwen)", 15, hours(nt, resume_steps(tests, mode))))  # fmt: skip
-    rows.append(("C'", "Resume@prefix (one_depth), no history (EVAL_PLAN §6.5), configuration 1 x 3 seeds; not built "
-                 "yet (D-025)", 3, hours(nt, resume_steps(tests, "one_depth"))))  # fmt: skip
+    rows.append(("C'", "Resume@prefix (all_depths, as chosen: D-032b), no history (EVAL_PLAN §6.5), configuration 1 x "
+                 "3 seeds", 3, hours(nt, resume_steps(tests, "all_depths"))))  # fmt: skip
     ren = hours(nt, episode_steps(tests, greedy_steps))
     hel = hours(nh, episode_steps(held, greedy_steps))
     rows.append(("D", "renamed + held-out larger, greedy, configurations 1-6 x 3 seeds (Qwen)", 18,

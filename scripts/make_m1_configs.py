@@ -238,7 +238,9 @@ def evals() -> None:
     order += [f"c{c}-qwen7b-{v}-s{s}" for c, v, s in EXTRA_TRAIN]
     plans = OUT / "plans"
     plans.mkdir(exist_ok=True)
-    lines = [f"batch configs/m1/eval-batches/{n}.txt 12:00:00" for n in order if (batches / f"{n}.txt").exists()]
+    # 24 h per batch: a core batch's step-budget estimate is about 12 h (scripts/eval_budget.py) and is not a bound;
+    # PBS bills the time used, and a batch killed at its walltime loses the run in progress
+    lines = [f"batch configs/m1/eval-batches/{n}.txt 24:00:00" for n in order if (batches / f"{n}.txt").exists()]
     head = "# M1.7 evaluation batches in priority order (D-032, D-034)\n"
     (plans / "eval.txt").write_text(head + "\n".join(lines) + "\n", encoding="utf-8")
     print(f"{len(written)} training runs with evaluation batches, plus the two base models; {len(lines)} batches "
