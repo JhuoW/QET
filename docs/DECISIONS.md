@@ -36,6 +36,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-028 | Accepted | M1 grid, splits and manifests (test size set at Gate A) |
 | D-029 | Proposed | The replay audit adds one hoisted order per node |
 | D-030 | Accepted | Gate A decisions for M1 (the human, 2026-10-18) |
+| D-031 | Proposed | M1.6 job plan: staged submission, walltime, budget guard |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -481,6 +482,18 @@ graphs per cell, as proposed; the frozen test manifests are built next and their
 wording accepted as proposed ("Accept as proposed"); EVAL_PLAN.md is human-only, so the human pastes it in, and no test
 evaluation runs before EVAL_PLAN §9 carries it. Also decided: Q17, a4 uses the sub-lattice on every graph (D-023a
 stands); D-028c, the toy accounts-and-orders tasks are the stateful extension.
+
+### D-031 M1.6 job plan: staged submission, walltime, budget guard
+The 33 training configs come from `scripts/make_m1_configs.py train` (B = 125M tokens, each from its warm-up run,
+checkpoints at 25/50/75/100% of B, no evaluation), are dry-run in four batches that share rendered prompts (Qwen
+quotient, Llama quotient, Qwen chronological, Qwen native) and run from pinned checkouts (D-025b). (a) Staged:
+train-c6-qwen7b-s0 and train-c2-qwen7b-s0 go first; after their first hour the agent checks throughput against the Gate
+A projection, memory, the logged objective and errors, then submits the other 31 together (the total GPU-hours do not
+depend on how many run at once). (b) Walltime 8 h per job (gpu_ppu_normal; billing follows the time used). (c) Budget
+guard: the agent stops and asks if the measured throughput projects the matrix's training beyond 110% of the Gate A
+projection (D-030a). (d) The epoch-0 pack prebuild stays (it fails fast on a graph that cannot be trained), although the
+dry runs already build every pack: about 3-6% of each run's GPU time; making it lazy is a trainer change left for later.
+Default: as described; cheap to reverse.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
