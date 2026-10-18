@@ -434,6 +434,7 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory, parent=None
                 if torch.cuda.is_available():  # the run's peak so far, which checks the memory sizing (D-024e)
                     row = {**row, "max_memory_gib": torch.cuda.max_memory_allocated() / 2**30}
                 log.write(json.dumps({"phase": phase, **row}) + "\n")
+                log.flush()  # readable while the job runs
 
             return write
 
