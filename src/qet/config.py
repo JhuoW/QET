@@ -19,7 +19,7 @@ from qet.train.chat import BACKBONES
 from qet.train.methods import METHODS
 
 DTYPES = ("bfloat16", "float32")
-ENVS = ("toy", "funcbenchgen")
+ENVS = ("toy", "funcbenchgen", "stateful")
 
 
 def _check_keys(section: str, data: dict[str, Any], required: set[str], optional: set[str]) -> None:
@@ -139,12 +139,12 @@ def load_config(path: str | Path) -> RunConfig:
         splits[name] = Split(int(d[name]["start"]), int(d[name]["count"]))
     a, b = splits["train"], splits["test"]
     source = d.get("source")
-    if d["env"] == "funcbenchgen":  # slices of two different manifests, disjoint by construction (D-028)
+    if d["env"] in ("funcbenchgen", "stateful"):  # slices of two different manifests, disjoint by construction
         _check_keys("data.source", source or {}, {"compile_run", "train", "eval"}, set())
         if source["eval"] == source["train"] or source["eval"].startswith("train"):
             raise ValueError("a run never evaluates on its training split")
     elif source is not None:
-        raise ValueError("data.source is for funcbenchgen runs")
+        raise ValueError("data.source is for funcbenchgen and stateful runs")
     elif a.start < b.start + b.count and b.start < a.start + a.count:
         raise ValueError("training and test seeds overlap")  # EVAL_PLAN §3.1: training seeds disjoint from test
     inject = d.get("inject")

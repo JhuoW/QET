@@ -133,3 +133,24 @@ def test_injected_false_independence_drops_one_true_constraint_per_chosen_graph(
                 assert all(u < v for u in p)
     eligible = sum(bool(r.edges) for r in records)
     assert 0 < changed < eligible  # about half of the graphs with a dependency
+
+
+def test_the_stateful_extension_loads_from_a_compile_run(tmp_path):
+    sys.path.insert(0, str(REPO / "scripts"))
+    import compile_m1
+
+    from qet import runlog
+    from qet.config import DataConfig, Split
+    from qet.datasets import build_dataset
+
+    log = tmp_path / "RUNLOG.md"
+    log.write_text(f"# Run log\n\n{runlog.HEADER}\n| {' | '.join('---' for _ in runlog.COLUMNS)} |\n")
+    out = compile_m1.main(["--splits", "stateful_train", "stateful_test", "--limit", "3", "--allow-dirty", "--out",
+                           str(tmp_path / "raw"), "--runlog", str(log)])  # fmt: skip
+    cfg = DataConfig("stateful", "stateful", {}, Split(0, 3), Split(0, 3),
+                     source={"compile_run": str(out), "train": "stateful_train", "eval": "stateful_test"})  # fmt: skip
+    ds = build_dataset(cfg)
+    assert len(ds.train_records) == 3 and len(ds.test_tasks) == 3 and ds.make_env is ToyEnv
+    assert [t.task_id for t in ds.test_tasks] == [r.task_id for r in ds.test_records]
+    assert any(c["writes"] for c in ds.contracts.values())  # stateful tools: effects by construction
+    assert ds.spec["env"] == "stateful" and ds.spec["train"]["split"] == "stateful_train"

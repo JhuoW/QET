@@ -46,6 +46,8 @@ def build_dataset(cfg: DataConfig, *, limit: int | None = None) -> Dataset:
     FuncBenchGen runs read the records of an M1.3 compile run instead (see `funcbenchgen_dataset`)."""
     if cfg.env == "funcbenchgen":
         return funcbenchgen_dataset(cfg, limit=limit)
+    if cfg.env == "stateful":
+        return stateful_dataset(cfg, limit=limit)
     if cfg.env != "toy":
         raise ValueError(f"unknown env {cfg.env!r}")
     n_train = cfg.train.count if limit is None else min(limit, cfg.train.count)
@@ -224,6 +226,47 @@ def inject_false_independence(records: Sequence[GraphRecord], rate: float, seed:
             rec = dataclasses.replace(rec, edges=tuple(e for e in rec.edges if e != drop))
         out.append(rec)
     return out
+
+
+def stateful_dataset(cfg: DataConfig, *, limit: int | None = None) -> Dataset:
+    """The stateful extension (D-028c): the records of an M1.3 compile run's stateful splits (checked against the
+    hashes in its manifest) and the toy tasks rebuilt from the manifests it compiled; ToyEnv with the tasks' own
+    contracts (by construction)."""
+    from qet.core.compile import read_records
+    from qet.manifest import REPO, sha256_file
+
+    src = cfg.source or {}
+    run = REPO / src["compile_run"]
+    compiled = json.loads((run / "manifest.json").read_text())
+    if compiled.get("status") != "completed":
+        raise ValueError(f"compile run {run} did not complete")
+    for split in (src["train"], src["eval"]):
+        for name, digest in compiled["splits"][split]["files"].items():
+            if sha256_file(run / split / name) != digest:
+                raise ValueError(f"{run / split / name} does not match its compile manifest")
+    n_train = cfg.train.count if limit is None else min(limit, cfg.train.count)
+    n_test = cfg.test.count if limit is None else min(limit, cfg.test.count)
+
+    def split(name: str, start: int, n: int) -> tuple[list[GraphRecord], list[Any]]:
+        records = read_records(run / name / "records.jsonl")[start : start + n]
+        manifest = json.loads((REPO / compiled["splits"][name]["manifest"]).read_text())
+        if manifest["source"] != "qet.envs.toy.stateful_task":
+            raise ValueError(f"split {name} is not a stateful split")
+        tasks = m1_tasks({**manifest, "tasks": manifest["tasks"][start : start + n]})
+        if [t.task_id for t in tasks] != [r.task_id for r in records] or len(tasks) != n:
+            raise ValueError(f"tasks and records of {name} do not line up")
+        return records, tasks
+
+    train, train_tasks = split(src["train"], cfg.train.start, n_train)
+    test_records, tasks = split(src["eval"], cfg.test.start, n_test)
+    spec = {"env": "stateful", "compile_run": src["compile_run"], "train": {"split": src["train"],
+            "start": cfg.train.start, "count": n_train}, "eval": {"split": src["eval"], "start": cfg.test.start,
+            "count": n_test}, "truncation": cfg.truncation}  # fmt: skip
+    benchmark = {"name": "stateful-toy (D-028c)", "code": "src/qet/envs/toy.py", "evaluator": "ToyEnv.check",
+                 "step_budget": "twice the minimum number of calls"}  # fmt: skip
+    env0 = ToyEnv((train_tasks or tasks)[0])
+    return Dataset(train, tasks, test_records, _merged_contracts(train_tasks + tasks), env0.contract_source, ToyEnv,
+                   spec, benchmark)  # fmt: skip
 
 
 def funcbenchgen_dataset(cfg: DataConfig, *, limit: int | None = None) -> Dataset:
