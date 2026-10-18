@@ -416,7 +416,18 @@ the pinned repository under any hash seed (built with PYTHONHASHSEED=7, checked 
 These are drafts: the test manifests are frozen at Gate A (EVAL_PLAN §0), and any change before then is recorded here.
 Update 2026-10-18 (Gate A, D-030): the human accepted (c) and set the test size to 10 graphs per cell, the first 10
 graphs (lowest graph seeds) of each cell of `test.json`, with `renamed.json` following them; the frozen manifests and
-their hashes are added here when built.
+their hashes are added here when built. Built 2026-10-18 (`PYTHONHASHSEED=7 python scripts/make_m1_manifests.py`;
+`PYTHONHASHSEED=99 ... --check` identical): the spec now says `frozen: true` and 10 test graphs per cell (sha256
+4d14ead668925d67d3fd20806ca1c5052057cfa42c0c2b9017d76b2c09a212e7); test and renamed hold 2,240 tasks each, all in the
+drafts above with the same content hashes, and the other splits keep their task lists (their files change only through
+the spec hash). Frozen sha256 of the files:
+  `train.json` efc6ad9b8210dbb2cf9bbd5a49e6c1098105f6aa1bea681851a4da2270489fb7
+  `dev.json` 30e725a915c1539747d7d8fbbb346ab28d674673d29c87cd1bb4ab6dadb33622
+  `test.json` f1d28593bcdaf59c18c36c2cfa5034d59e0d1636aba41dce9e8a925147ebb6bf
+  `heldout_larger.json` 267b5054c905d29de4ae5549381d762a71836c444f6dddbd71e0fbe4c8f6b9ac
+  `renamed.json` c4788095dd72bfcc0c42e99ca8b199d4cfc112368b60d3326ca8c3055d3009d8
+  `stateful_train.json` ab964d322ad4decb3e415ecabe7beab9a0fe98430ba3d54e2d9ecf2fb4ae50ed
+  `stateful_test.json` 0df26343f48a11f4007aa7ff2f2f3fa1ac2b48113be4dd6e4b9c5e3212c64528
 
 ### D-029 The replay audit adds one hoisted order per node
 `src/qet/envs/base.py` (`hoisted_orders`, `replay_audit(hoisted=True)`), used by `scripts/compile_m1.py`. SPEC §4's

@@ -94,7 +94,8 @@ def build(spec_path: Path, split: str) -> dict[str, Any]:
         raise ValueError(f"{split}: duplicate task ids")
     return {"split": split, "spec": str(spec_path.relative_to(REPO)), "spec_sha256": spec_sha256(spec_path),
             "funcbenchgen_commit": spec["funcbenchgen_commit"], "source": source, "count": len(tasks),
-            "provisional": split in ("test", "renamed", "heldout_larger"), "tasks": tasks}  # fmt: skip
+            "provisional": not spec.get("frozen", False) and split in ("test", "renamed", "heldout_larger"),
+            "tasks": tasks}  # fmt: skip
 
 
 def main(argv: list[str] | None = None) -> None:

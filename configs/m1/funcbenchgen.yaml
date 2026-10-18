@@ -1,7 +1,8 @@
 # M1.2: the FuncBenchGen grid and splits (EVAL_PLAN §3.1), built by scripts/make_m1_manifests.py into
-# configs/m1/manifests/*.json, whose sha256 values are recorded in docs/DECISIONS.md (D-028). Test sizes are provisional:
-# Gate A fixes them by power analysis, and the test manifests are frozen there (EVAL_PLAN §0).
+# configs/m1/manifests/*.json, whose sha256 values are recorded in docs/DECISIONS.md (D-028). Frozen at Gate A
+# (2026-10-18, D-030): the human set the test size to 10 graphs per cell by the power analysis in docs/reports/gate-A.md.
 funcbenchgen_commit: 0729e2567dfaee1e53262ba9bfd5ba6a4b4e4343
+frozen: true  # Gate A (D-030): the test, renamed and held-out manifests are no longer provisional
 grid:
   core: [5, 10, 20]
   depth: all  # 1 .. core - 1
@@ -16,7 +17,7 @@ grid:
 splits:
   train: {graphs: 5000, seed_start: 0}  # round-robin over the cells, one trial per graph
   dev: {graphs_per_cell: 4, seed_start: 10000000}  # model selection only
-  test: {graphs_per_cell: 20, seed_start: 20000000}  # provisional size (Gate A)
+  test: {graphs_per_cell: 10, seed_start: 20000000}  # Gate A: 10 per cell (D-030), the lowest 10 seeds of the 20 drafted
   heldout_larger:  # more calls than any training cell
     core: [30]
     depth: [1, 2, 4, 8, 16, 29]

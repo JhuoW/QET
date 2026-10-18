@@ -47,7 +47,7 @@ def test_the_grid_is_the_eval_plans(manifests):
     assert cells == expected and len(cells) == 224
     train_cells = {(t["core"], t["depth"], t["irrelevant"], t["form"]) for t in manifests["train"]["tasks"]}
     assert train_cells == expected and manifests["train"]["count"] == 5000
-    assert manifests["test"]["provisional"] and manifests["test"]["count"] == 224 * 20  # sized at Gate A
+    assert not manifests["test"]["provisional"] and manifests["test"]["count"] == 224 * 10  # frozen at Gate A (D-030)
 
 
 def test_held_out_sets(manifests):
