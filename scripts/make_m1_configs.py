@@ -229,7 +229,19 @@ def evals() -> None:
                   eval_config(name, "2", b, 0, split, FULL, None))  # fmt: skip
             paths.append(str(path.relative_to(REPO)))
         (batches / f"base-{b}.txt").write_text("\n".join(paths) + "\n", encoding="utf-8")
-    print(f"{len(written)} training runs with evaluation batches, plus the two base models")
+    # the order the two chains run them in (D-034): the batches behind criteria 1-3 first, then the rest
+    order = [f"c{c}-qwen7b-s{s}" for c in ("6", "3", "4", "1", "2", "5") for s in (0, 1, 2)]
+    order += ["base-qwen7b", "base-llama8b"]
+    order += [f"c{c}-llama8b-s{s}" for c in ("2", "3", "6") for s in (0, 1, 2)]
+    order += ["a1-qwen7b-s0", "a2-qwen7b-s0", "a3-qwen7b-s0", "a4k2-qwen7b-s0", "a4k4-qwen7b-s0", "a4k8-qwen7b-s0"]
+    order += [f"c{c}-qwen7b-{v}-s{s}" for c, v, s in EXTRA_TRAIN]
+    plans = OUT / "plans"
+    plans.mkdir(exist_ok=True)
+    lines = [f"batch configs/m1/eval-batches/{n}.txt 12:00:00" for n in order if (batches / f"{n}.txt").exists()]
+    head = "# M1.7 evaluation batches in priority order (D-032, D-034)\n"
+    (plans / "eval.txt").write_text(head + "\n".join(lines) + "\n", encoding="utf-8")
+    print(f"{len(written)} training runs with evaluation batches, plus the two base models; {len(lines)} batches "
+          "in configs/m1/plans/eval.txt")  # fmt: skip
 
 
 def main(argv: list[str] | None = None) -> None:
