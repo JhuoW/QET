@@ -168,7 +168,17 @@ Goal: the end-to-end pipeline works and is provably consistent before any expens
   (report section 9; the human pastes it into EVAL_PLAN.md, and no test evaluation runs before it is there); Q17
   "Every graph"; D-028c "Accept it". Report audited by the results-auditor (PASS WITH NOTES at 031fd79; report
   commit bbb8f99).
-- [ ] **M1.5 Format warm-up checkpoints** (D-010) per backbone and seed.
+- [x] **M1.5 Format warm-up checkpoints** (D-010) per backbone and seed.
+  evidence: `scripts/pbs/submit.sh configs/m1/warmup-measure.yaml` (job 88092.gaas) →
+  results/raw/M1-warmup-measure-qwen7b-s0-20261018T032752Z (commit f506d83, clean, pinned checkout): on Qwen2.5-7B,
+  seed 0, quotient renderer, 0 of 200 sampled dev states (100 dev tasks spread over the grid x 2 states) were invalid
+  actions after 5 warm-up steps (5 of 200 before any step; 2 of 200 at step 10, 0 at 15-40), so the rule fixed before
+  the run gives 5 steps (D-010 update), applied to every renderer and backbone without its own check;
+  `python scripts/make_m1_configs.py warmups --steps 5`, dry runs pass, then the 10 warm-up jobs (88101-88110; the
+  three Llama jobs failed at model load because the weights were not cached, recorded as failed, and ran again as
+  88116-88118 after the human approved the download) → 10 completed warm-up runs, one per renderer, backbone and seed
+  (5 steps, 0.53-0.63M tokens, 0.08-0.09 GPU-hours each; checkpoint files match their manifests; RUNLOG rows); the 33
+  training configs name them as parents; results-auditor: PASS WITH NOTES; commit 19eadf6
 - [ ] **M1.6 Training runs** (EVAL_PLAN §4, ≈ 33), each through `/run-experiment` with matched compute.
 - [ ] **M1.7 Evaluation**: blocks A–D on FuncBenchGen; ToolHop for the base model and configurations 2 and 6;
   Resume@prefix; injected false-independence ablation; compute and data curves.
