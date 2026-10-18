@@ -380,3 +380,21 @@ def test_a_parent_of_another_seed_is_refused(tmp_path):
     with pytest.raises(ValueError, match="has seed 0, this run 1"):
         runner.run(other, **common)
     assert len(list((tmp_path / "raw").iterdir())) == 1  # refused before its folder existed
+
+
+@pytest.mark.slow  # a tiny-model run
+def test_a_training_run_without_evaluation_tasks_only_trains(tmp_path):
+    """M1.6 runs train and keep their budget-fraction checkpoints; evaluation comes later from those checkpoints."""
+    data = yaml.safe_load(SMOKE.read_text())
+    data["data"]["train"]["count"], data["data"]["test"]["count"] = 4, 0
+    data["train"].update(token_budget=40_000, warmup_steps=1, batch_graphs=2, checkpoint_fractions=[0.5, 1.0])
+    data["eval"] = {"decoding": [{"mode": "greedy"}], "max_new_tokens": 6}
+    path = tmp_path / "run.yaml"
+    path.write_text(yaml.safe_dump(data))
+    out = runner.run(load_config(path), allow_dirty=True, results_root=tmp_path / "raw",
+                     checkpoints_root=tmp_path / "ckpt", runlog_path=fresh_runlog(tmp_path),
+                     model_factory=tiny_model)  # fmt: skip
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["status"] == "completed" and manifest["tokens"]["eval"]["episodes"] == 0
+    assert len(manifest["outputs"]["checkpoints"]) == 2 and manifest["outputs"]["predictions"] == []
+    assert json.loads((out / "metrics.json").read_text())["standard"] == {}
