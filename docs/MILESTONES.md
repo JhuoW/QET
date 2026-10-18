@@ -159,10 +159,15 @@ Goal: the end-to-end pipeline works and is provably consistent before any expens
   → docs/reports/gate-A.md (structure, tokens per graph, throughput, memory, the GPU-hour projection for the
   33-run matrix, the decoding limit, test-size options), results-auditor: FAIL at 3d18db1 (4 blocking items,
   fixed), PASS WITH NOTES at 031fd79 (notes applied); commit bbb8f99
-- [ ] **GATE A** (`scripts/gate_report.py --gate A` → `docs/reports/gate-A.md`): compile coverage and fallback,
+- [x] **GATE A** (`scripts/gate_report.py --gate A` → `docs/reports/gate-A.md`): compile coverage and fallback,
   width distribution, incomparable-pair share, states per graph, true-DAG agreement, invariance test results,
   tokens per graph, GPU budget, proposed test size per cell (power analysis), final wording of EVAL_PLAN §9.
   STOP. The human approves budget, test manifest and pre-registration.
+  decided by the human on 2026-10-18 (D-030): training budget "125M tokens" per run (the batch approval for M1.5
+  and M1.6); test size "10 per cell"; tuning "No grid"; max_new_tokens "512"; EVAL_PLAN §9 "Accept as proposed"
+  (report section 9; the human pastes it into EVAL_PLAN.md, and no test evaluation runs before it is there); Q17
+  "Every graph"; D-028c "Accept it". Report audited by the results-auditor (PASS WITH NOTES at 031fd79; report
+  commit bbb8f99).
 - [ ] **M1.5 Format warm-up checkpoints** (D-010) per backbone and seed.
 - [ ] **M1.6 Training runs** (EVAL_PLAN §4, ≈ 33), each through `/run-experiment` with matched compute.
 - [ ] **M1.7 Evaluation**: blocks A–D on FuncBenchGen; ToolHop for the base model and configurations 2 and 6;
