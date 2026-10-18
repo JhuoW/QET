@@ -41,13 +41,14 @@ PASS1 = {"3": False, "1": False, "2": False, "a1": False, "a2": False}  # the re
 TRAIN_SETTINGS = {"lora_rank": 64, "lora_alpha": 128, "batch_graphs": 4, "lr": 1.0e-4, "warmup": 0.03,
                   "max_grad_norm": 1.0, "s_max": 256, "max_tokens": 8192, "max_target_tokens": 8192}  # fmt: skip
 # M1.7 training extras (D-033), Qwen seed 0 in the quotient renderer: the data curve trains configurations 2 and 6 on
-# the first 1,250 and 2,500 training graphs (round-robin over the cells, so every cell is covered); the ablation trains
-# configuration 6 with injected false independences. Each variant has its own warm-up on the same data.
-VARIANTS = {"n1250": {"train_count": 1250}, "n2500": {"train_count": 2500},
+# the first 224 and 1,250 training graphs (round-robin over the cells: the first 224 are one per cell); the ablation
+# trains configuration 6 with injected false independences. Each variant has its own warm-up on the same data. The
+# 2,500-graph runs were replaced by the 224-graph runs before they started (D-033a); their warm-up ran and stays listed.
+VARIANTS = {"n224": {"train_count": 224}, "n1250": {"train_count": 1250}, "n2500": {"train_count": 2500},
             "fi": {"inject": {"false_independence": 0.5, "seed": 0}},
             "stateful": {"stateful": True}}  # fmt: skip
-EXTRA_WARMUPS = [("n1250", 0), ("n2500", 0), ("fi", 0), ("stateful", 0), ("stateful", 1), ("stateful", 2)]
-EXTRA_TRAIN = [("2", "n1250", 0), ("6", "n1250", 0), ("2", "n2500", 0), ("6", "n2500", 0), ("6", "fi", 0)]
+EXTRA_WARMUPS = [("n1250", 0), ("n2500", 0), ("fi", 0), ("stateful", 0), ("stateful", 1), ("stateful", 2), ("n224", 0)]
+EXTRA_TRAIN = [("2", "n1250", 0), ("6", "n1250", 0), ("2", "n224", 0), ("6", "n224", 0), ("6", "fi", 0)]
 EXTRA_TRAIN += [(c, "stateful", s) for c in ("2", "6") for s in (0, 1, 2)]  # the human: B = 25M, 3 seeds (D-033c)
 EXTRA_BUDGET = {"stateful": 25_000_000}
 EVAL = {"decoding": [{"mode": "greedy"}, {"mode": "sample", "temperature": 1.0, "top_p": 1.0, "samples": 8}],

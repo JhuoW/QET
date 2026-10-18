@@ -538,9 +538,18 @@ accepted wording (D-030e).
 The human chose these extras (D-032c); the design choices are the agent's. Both run on Qwen2.5-7B-Instruct, seed 0, in
 the quotient renderer, at the matrix's settings (B = 125M tokens, D-009 defaults, checkpoints at 25/50/75/100%), each
 from a 5-step warm-up (D-010) on its own training data, so a parent's data always equals its child's (`parent_record`).
-(a) Data curve (EVAL_PLAN §5 block D, figure F3): configurations 2 and 6 on the first 1,250 and the first 2,500 training
-graphs; the training manifest is round-robin over the 224 cells (D-028b), so every subset covers every cell, and 5,000
-is the main matrix's seed-0 run. Same B, so the smaller sets are seen for more epochs. (b) Injected false-independence
+(a) Data curve (EVAL_PLAN §5 block D, figure F3): configurations 2 and 6 on the first 224 and the first 1,250 training
+graphs; the training manifest is round-robin over the 224 cells (D-028b), so every subset covers every cell (the first
+224 are one graph per cell), and 5,000 is the main matrix's seed-0 run. Same B. Revised on 2026-10-18, before the
+affected runs started, after the M1.6 audit: within B = 125M the completed Qwen runs of configurations 4-6 trained on
+440-472 distinct graphs of the 5,000 (configuration 2: 4,792-4,800; the train logs' graph ids), so at 1,250 or 2,500
+graphs configuration 6 still sees each graph at most once, and those points do not change how many demonstrations it
+sees; the first design's "the smaller sets are seen for more epochs" held for configuration 2 only. The 2,500-graph runs
+of configurations 2 and 6 (not started; their configs stay in configs/m1 and are not run; the 2,500 warm-up ran and is
+reported) are replaced by runs on the first 224 graphs, where configuration 6 sees each graph about twice and
+configuration 2 about 21 times; the 1,250-graph runs stay (configuration 6's was running: at 27% of B it had seen 160
+graphs, so it checks that a smaller pool above what configuration 6 consumes changes nothing). The 224 variant has its
+own 5-step warm-up. Same number of runs and about the same cost (one more warm-up, about 0.1 GPU-hour). (b) Injected false-independence
 ablation (block C): configuration 6 where a seeded half of the training graphs that have a dependency lose one edge of
 their transitive reduction (`inject_false_independence`, rate 0.5, seed 0): a true constraint with no other path between
 its ends, so the lattice trains on some orders that are illegal in truth. It is compared with train-c6-qwen7b-s0 on the
