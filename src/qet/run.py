@@ -76,9 +76,10 @@ def plan(cfg: RunConfig, *, limit: int | None = None) -> dict[str, Any]:
             p1 = p2 if with_pass1 else [0] * len(packs)
             return p1, p2, [len(pk.lat.states) for pk in packs]
 
-        p1, p2, states = graph_tokens(m, m.pass1)
+        # only the packs this run trains on: a warm-up run has no configuration phase, a run with a parent no warm-up
+        p1, p2, states = ([], [], []) if t.warmup_only else graph_tokens(m, m.pass1)
         per_epoch = sum(p1) + sum(p2)
-        _, w2, _ = graph_tokens(warmup_method(cfg), False)
+        w2 = graph_tokens(warmup_method(cfg), False)[1] if t.warmup_steps else []
         warmup = round(t.warmup_steps * t.batch_graphs * sum(w2) / max(1, len(w2)))
         if t.parent:  # the parent's warm-up tokens count toward this run's budget (D-010)
             try:
