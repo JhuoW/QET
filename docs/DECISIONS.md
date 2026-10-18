@@ -37,6 +37,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-029 | Proposed | The replay audit adds one hoisted order per node |
 | D-030 | Accepted | Gate A decisions for M1 (the human, 2026-10-18) |
 | D-031 | Proposed | M1.6 job plan: staged submission, walltime, budget guard |
+| D-032 | Accepted | M1.7 evaluation plan (the human, 2026-10-18) |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -514,6 +515,21 @@ memory 89.7 and 90.0 GiB) and after 44 steps of train-c2-llama8b-s0 (94.7 GiB), 
 billed GPU-hours for the matrix, 108.5% of the Gate A projection of 127 and inside the 110% guard; the other 31 runs
 were submitted (22 Qwen runs and one Llama run first, the other 8 Llama runs once its rate was known). Engineering
 projection from the training logs, not a result.
+
+### D-032 M1.7 evaluation plan (the human, 2026-10-18)
+Asked with the estimates of `python scripts/eval_budget.py` (inputs audited: the vLLM check on the configuration-6 25%
+checkpoint, results/raw/M1-vllm-check-20261018T061025Z), the human chose: (a) scope "Full core": the frozen test set
+with greedy and 8 samples for the 100% checkpoint of all 33 runs and the two base models; greedy curves at the 25/50/75%
+checkpoints of the 33 runs; Resume@prefix for configurations 1, 2, 3, 5, 6 x 3 seeds (Qwen) and its no-history condition
+for configuration 1 (EVAL_PLAN §6.5); the renamed and held-out larger sets, greedy, for configurations 1-6 x 3 seeds
+(Qwen). (b) Resume@prefix starts "Every depth" (eval.resume_starts all_depths, the starts frozen in each run's data
+manifest). (c) Extras: ToolHop (Apache-2.0, not gated), the injected false-independence ablation, the data curve and the
+stateful extension; the stateful extension's design and cost come back to the human before it trains. (d) vLLM's
+run-to-run noise "Accept and disclose": every system is evaluated with vLLM 0.11, numbers come only from saved
+predictions, and the repeatability measured by the check is reported with the results. Likely cost of (a)-(b) about 145
+GPU-hours (the step-budget column of the script is higher and is not a cap). Guard: the agent stops and asks if the
+projected evaluation hours pass 110% of the likely figure; no test evaluation runs before EVAL_PLAN §9 carries the
+accepted wording (D-030e).
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
