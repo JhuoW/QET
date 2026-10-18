@@ -1,0 +1,9 @@
+# M1.7 extras training (D-033), two chains within the 2-GPU limit (D-034); line i runs in chain i mod 2
+config configs/m1/warmup-quotient-qwen7b-stateful-s0.yaml 01:00:00
+config configs/m1/warmup-quotient-qwen7b-stateful-s1.yaml 01:00:00
+config configs/m1/warmup-quotient-qwen7b-stateful-s2.yaml 01:00:00
+config configs/m1/train-c6-qwen7b-fi-s0.yaml 08:00:00
+config configs/m1/train-c6-qwen7b-n1250-s0.yaml 08:00:00
+config configs/m1/train-c6-qwen7b-n2500-s0.yaml 08:00:00
+config configs/m1/train-c2-qwen7b-n1250-s0.yaml 08:00:00
+config configs/m1/train-c2-qwen7b-n2500-s0.yaml 08:00:00
