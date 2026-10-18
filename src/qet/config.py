@@ -48,6 +48,7 @@ class DataConfig:
     demo_seed: int = 0
     truncation: dict[str, Any] | None = None
     source: dict[str, str] | None = None  # funcbenchgen: {compile_run, train, eval}; train/test then slice those splits
+    inject: dict[str, Any] | None = None  # funcbenchgen ablation: {false_independence: rate, seed} (D-033)
 
 
 @dataclass(frozen=True)
@@ -127,7 +128,7 @@ def load_config(path: str | Path) -> RunConfig:
             raise ValueError(f"{key} may contain only letters, digits, '.', '_' and '-'")
 
     d = data["data"]
-    _check_keys("data", d, {"env", "kind", "train", "test"}, {"params", "demo_seed", "truncation", "source"})
+    _check_keys("data", d, {"env", "kind", "train", "test"}, {"params", "demo_seed", "truncation", "source", "inject"})
     if d["env"] not in ENVS:
         raise ValueError(f"unknown env {d['env']!r}; expected one of {ENVS}")
     splits = {}
@@ -144,8 +145,14 @@ def load_config(path: str | Path) -> RunConfig:
         raise ValueError("data.source is for funcbenchgen runs")
     elif a.start < b.start + b.count and b.start < a.start + a.count:
         raise ValueError("training and test seeds overlap")  # EVAL_PLAN §3.1: training seeds disjoint from test
+    inject = d.get("inject")
+    if inject is not None:
+        _check_keys("data.inject", inject, {"false_independence", "seed"}, set())
+        if d["env"] != "funcbenchgen" or not 0 < float(inject["false_independence"]) <= 1:
+            raise ValueError("data.inject: funcbenchgen runs only, with a rate in (0, 1]")
     data_cfg = DataConfig(d["env"], d["kind"], dict(d.get("params") or {}), a, b, int(d.get("demo_seed", 0)),
-                          d.get("truncation"), dict(source) if source else None)  # fmt: skip
+                          d.get("truncation"), dict(source) if source else None,
+                          dict(inject) if inject else None)  # fmt: skip
 
     train = None
     if data.get("train") is not None:

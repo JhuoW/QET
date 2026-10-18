@@ -38,6 +38,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-030 | Accepted | Gate A decisions for M1 (the human, 2026-10-18) |
 | D-031 | Proposed | M1.6 job plan: staged submission, walltime, budget guard |
 | D-032 | Accepted | M1.7 evaluation plan (the human, 2026-10-18) |
+| D-033 | Proposed | Design of the M1.7 training extras: data curve and false-independence ablation |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -530,6 +531,19 @@ predictions, and the repeatability measured by the check is reported with the re
 GPU-hours (the step-budget column of the script is higher and is not a cap). Guard: the agent stops and asks if the
 projected evaluation hours pass 110% of the likely figure; no test evaluation runs before EVAL_PLAN §9 carries the
 accepted wording (D-030e).
+
+### D-033 Design of the M1.7 training extras: data curve and false-independence ablation
+The human chose these extras (D-032c); the design choices are the agent's. Both run on Qwen2.5-7B-Instruct, seed 0, in
+the quotient renderer, at the matrix's settings (B = 125M tokens, D-009 defaults, checkpoints at 25/50/75/100%), each
+from a 5-step warm-up (D-010) on its own training data, so a parent's data always equals its child's (`parent_record`).
+(a) Data curve (EVAL_PLAN §5 block D, figure F3): configurations 2 and 6 on the first 1,250 and the first 2,500 training
+graphs; the training manifest is round-robin over the 224 cells (D-028b), so every subset covers every cell, and 5,000
+is the main matrix's seed-0 run. Same B, so the smaller sets are seen for more epochs. (b) Injected false-independence
+ablation (block C): configuration 6 where a seeded half of the training graphs that have a dependency lose one edge of
+their transitive reduction (`inject_false_independence`, rate 0.5, seed 0): a true constraint with no other path between
+its ends, so the lattice trains on some orders that are illegal in truth. It is compared with train-c6-qwen7b-s0 on the
+frozen test set. Evaluation as in D-032 for configuration 6. Cost: about 19 GPU-hours of training (five runs) plus
+evaluation. Default: as described; cheap to reverse before the runs start.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.

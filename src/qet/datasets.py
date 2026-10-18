@@ -7,7 +7,7 @@ import dataclasses
 import json
 import random
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -204,6 +204,28 @@ def audit_summary(compiled: list[CompiledTask]) -> dict[str, Any]:
     }
 
 
+def inject_false_independence(records: Sequence[GraphRecord], rate: float, seed: int) -> list[GraphRecord]:
+    """The injected false-independence ablation (EVAL_PLAN §5 block C, D-033): in a share `rate` of the graphs that have
+    a dependency, drop one edge of the transitive reduction (a true constraint with no other path between its ends),
+    so the lattice holds orders that are illegal in truth. The draw is seeded by `seed` and the task id; the demo order
+    stays legal."""
+    from qet.core.compile import ancestor_masks
+
+    out = []
+    for rec in records:
+        rng = random.Random(f"inject-fi\x1f{seed}\x1f{rec.task_id}")
+        reduction = []
+        for e in rec.edges:
+            others = [frozenset(u for u in p if (u, v) != (e.u, e.v)) for v, p in enumerate(rec.preds())]
+            if not ancestor_masks(rec.n, others)[e.v] >> e.u & 1:
+                reduction.append(e)
+        if reduction and rng.random() < rate:
+            drop = rng.choice(sorted(reduction))
+            rec = dataclasses.replace(rec, edges=tuple(e for e in rec.edges if e != drop))
+        out.append(rec)
+    return out
+
+
 def funcbenchgen_dataset(cfg: DataConfig, *, limit: int | None = None) -> Dataset:
     """Training records from an M1.3 compile run (checked against the hashes in its manifest) and evaluation tasks
     rebuilt from the manifest that run compiled; `train` and `test` slice the two splits."""
@@ -233,9 +255,13 @@ def funcbenchgen_dataset(cfg: DataConfig, *, limit: int | None = None) -> Datase
         raise ValueError("the compile run has fewer records than the config asks for")
     tools = {t["name"] for r in train for t in r.tools} | {t["name"] for task in tasks for t in task.tools}
     contracts = {name: {"reads": [], "writes": []} for name in sorted(tools - {"finish"})}  # pure (SPEC §3)
+    if cfg.inject:
+        train = inject_false_independence(train, float(cfg.inject["false_independence"]), int(cfg.inject["seed"]))
     spec = {"env": "funcbenchgen", "compile_run": src["compile_run"], "train": {"split": src["train"],
             "start": cfg.train.start, "count": n_train}, "eval": {"split": src["eval"], "start": cfg.test.start,
             "count": n_test}, "truncation": cfg.truncation}  # fmt: skip
+    if cfg.inject:
+        spec["inject"] = dict(cfg.inject)
     commit = subprocess.run(["git", "-C", str(REPO / "third_party" / "FuncBenchGen"), "rev-parse", "HEAD"],
                             capture_output=True, text=True, check=True).stdout.strip()  # fmt: skip
     benchmark = {"name": "funcbenchgen", "code": "src/qet/envs/funcbenchgen.py", "commit": commit,

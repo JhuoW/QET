@@ -111,3 +111,25 @@ def test_the_pilot_statistics_script_writes_its_run(tmp_path):
     stats = json.loads((out / "stats.json").read_text())
     assert stats["graphs"] == 3 and stats["invariance"]["failures"] == 0
     assert [r["status"] for r in runlog.read_rows(log)] == ["completed", "completed"]
+
+
+def test_injected_false_independence_drops_one_true_constraint_per_chosen_graph():
+    from qet.core.compile import ancestor_masks
+    from qet.datasets import inject_false_independence
+
+    comp = [compile_trace(t, FuncBenchGenEnv, demo_seed=0, audit_orders=0) for t in m1_tasks(sample("train", 40))]
+    records = [c.record for c in comp]
+    injected = inject_false_independence(records, 0.5, seed=0)
+    assert injected == inject_false_independence(records, 0.5, seed=0)  # seeded
+    changed = 0
+    for before, after in zip(records, injected, strict=True):
+        removed = set(before.edges) - set(after.edges)
+        assert set(after.edges) <= set(before.edges) and len(removed) <= 1
+        if removed:
+            changed += 1
+            (e,) = removed
+            assert not ancestor_masks(after.n, after.preds())[e.v] >> e.u & 1  # the two calls became independent
+            for v, p in enumerate(after.preds()):  # the demo order (node ids) is still legal
+                assert all(u < v for u in p)
+    eligible = sum(bool(r.edges) for r in records)
+    assert 0 < changed < eligible  # about half of the graphs with a dependency
