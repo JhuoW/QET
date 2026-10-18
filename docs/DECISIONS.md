@@ -384,6 +384,16 @@ exhausted or render error; errors are counted per call and per episode by the en
 one (FuncBenchGen: value not yet known, incorrect value), else by the step's observation-error flag. Default: as
 described; cheap to reverse.
 
+Update 2026-10-18 (the vLLM path, D-030f): `src/qet/infer/vllm_sampler.py` runs vLLM 0.11.0 in ~/venvs/qet-vllm (a venv
+over the base environment's torch 2.8.0) with the rules of (b); evaluation episodes run in lockstep rounds
+(`run_rolling`), with rows identical to one-at-a-time runs for a deterministic policy (tests). The check
+results/raw/M1-vllm-check-20261018T043054Z (results-auditor: numbers OK) found the backends' greedy episodes
+token-identical in 36 of 64 dev episodes and ending the same way in 57 of 64, with vLLM about 35 times faster per step
+than this job's Hugging Face loop; its throughput, measured with a weak 40-step adapter whose episodes ended early,
+gives a lower bound for evaluating trained checkpoints, to be measured again on one. Every system in a comparison is
+evaluated with the same backend, and numbers are always recomputed from saved predictions (vLLM 0.11 has no
+batch-invariant mode, so a repeat may differ). The end of turn as the last allowed token now counts as ended in vLLM too
+(vLLM checks the length cap first), and the context limit is 32,768 tokens.
 ### D-027 FuncBenchGen adapter details
 `src/qet/envs/funcbenchgen.py`; the repository is the git submodule `third_party/FuncBenchGen` at `0729e25`
 (2026-02-10, BSD-3), never modified. (a) A task is one graph of one grid cell and one trial, built with the
@@ -494,7 +504,8 @@ train-c6-qwen7b-s0 and train-c2-qwen7b-s0 go first; after their first hour the a
 A projection, memory, the logged objective and errors, then submits the other 31 together (the total GPU-hours do not
 depend on how many run at once). (b) Walltime 8 h per job (gpu_ppu_normal; billing follows the time used). (c) Budget
 guard: the agent stops and asks if the measured throughput projects the matrix's training beyond 110% of the Gate A
-projection (D-030a). (d) The epoch-0 pack prebuild stays (it fails fast on a graph that cannot be trained), although the
+projection (D-030a), counted in billed PBS walltime (resources_used.walltime), which runs slightly above the manifests'
+in-process GPU-hours. (d) The epoch-0 pack prebuild stays (it fails fast on a graph that cannot be trained), although the
 dry runs already build every pack: about 3-6% of each run's GPU time; making it lazy is a trainer change left for later.
 Default: as described; cheap to reverse.
 

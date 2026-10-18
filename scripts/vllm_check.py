@@ -4,7 +4,8 @@
                                  [--adapter checkpoints/<warm-up run>/warmup] [--allow-dirty]
 
 1. Agreement: greedy episodes on `--tasks` dev tasks (spread over the grid) with the Hugging Face loop and with vLLM,
-   compared step by step (same raw output) and by outcome. With `--adapter`, both backends use that LoRA checkpoint.
+   compared step by step (same raw output) and by outcome, and vLLM's greedy episodes repeated once to size its
+   run-to-run noise. With `--adapter`, both backends use that LoRA checkpoint.
 2. Throughput: vLLM episodes on `--throughput-tasks` dev tasks with greedy decoding plus 8 samples at T = 1.0, as M1.7
    evaluates (EVAL_PLAN §7), timed for the evaluation budget.
 
@@ -72,7 +73,7 @@ def main(argv: list[str] | None = None) -> Path:
            "path": rel, "commit": git["commit"][:7] + ("+dirty" if git["dirty"] else ""),
            "note": f"tasks={args.tasks} throughput={args.throughput_tasks}"}  # fmt: skip
     runlog.append_row(args.runlog, row)
-    t0, status, summary = time.perf_counter(), "failed", {}
+    t0, status, error, summary = time.perf_counter(), "failed", None, {}
     greedy = EvalSettings(({"mode": "greedy"},), args.max_new_tokens)
     full = EvalSettings(({"mode": "greedy"}, {"mode": "sample", "temperature": 1.0, "top_p": 1.0, "samples": 8}),
                         args.max_new_tokens)  # fmt: skip
@@ -113,6 +114,10 @@ def main(argv: list[str] | None = None) -> Path:
             hf_steps, shared_steps = hf_steps + len(a), shared_steps + prefix  # steps equal before the first difference
             same_episodes += a == c
             same_outcome += (h["end"], h["success"]) == (v["end"], v["success"])
+        rp_rows, _ = episodes(agree_tasks, lambda d: VLLMSampler(llm, fmt.eot_id, d, adapter), greedy,
+                              out / "vllm_repeat.jsonl", width=args.width)  # fmt: skip
+        repeat_same = sum([s["raw_output"] for s in x["steps"]] == [s["raw_output"] for s in y["steps"]]
+                          for x, y in zip(vl_rows, rp_rows, strict=True))  # fmt: skip
         sp_rows, sp_s = episodes(speed_tasks, lambda d: VLLMSampler(llm, fmt.eot_id, d, adapter), full,
                                  out / "throughput.jsonl", width=args.width)  # fmt: skip
         steps = [s for r in sp_rows for s in r["steps"]]
@@ -121,7 +126,8 @@ def main(argv: list[str] | None = None) -> Path:
                           "same_end_and_success": same_outcome, "hf_steps": hf_steps,
                           "steps_before_first_difference": shared_steps, "hf_seconds": hf_s, "vllm_seconds": vl_s,
                           "hf_success": sum(r["success"] for r in hf_rows),
-                          "vllm_success": sum(r["success"] for r in vl_rows)},
+                          "vllm_success": sum(r["success"] for r in vl_rows),
+                          "vllm_repeat_identical_episodes": repeat_same},
             "throughput": {"tasks": len(speed_tasks), "episodes": len(sp_rows), "steps": len(steps),
                            "prompt_tokens": sum(s["prompt_tokens"] for s in steps),
                            "output_tokens": sum(s["output_tokens"] for s in steps), "seconds": sp_s,
@@ -130,7 +136,7 @@ def main(argv: list[str] | None = None) -> Path:
         (out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
         status = "completed"
     except BaseException as e:
-        status = f"failed: {type(e).__name__}: {e}"
+        error = f"{type(e).__name__}: {e}"
         raise
     finally:
         hours = (time.perf_counter() - t0) / 3600 * (1 if torch.cuda.is_available() else 0)
@@ -139,7 +145,12 @@ def main(argv: list[str] | None = None) -> Path:
                     "backbone": {"id": args.backbone, "revision": backbone(args.backbone).revision},
                     "adapter": {"path": args.adapter, "files": adapter_files} if adapter else None,
                     "tokenizer": fmt.fingerprint(), "hardware": hardware(), "libraries": libraries(),
-                    "gpu_hours": hours, "status": status,
+                    "decoding": {"agreement": "greedy", "throughput": "greedy + 8 samples (T 1.0, top-p 1.0)",
+                                 "max_new_tokens": args.max_new_tokens, "width": args.width},
+                    "data": {"compile_run": args.compile_run, "split": "dev",
+                             "agreement_tasks": [t.task_id for t in agree_tasks],
+                             "throughput_tasks": [t.task_id for t in speed_tasks]},
+                    "gpu_hours": hours, "status": status, "error": error,
                     "files": {p.name: sha256_file(p) for p in sorted(out.iterdir()) if p.is_file()}}  # fmt: skip
         (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         runlog.update_row(args.runlog, out.name, status="completed" if status == "completed" else "failed",

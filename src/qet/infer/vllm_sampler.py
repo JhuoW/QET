@@ -18,7 +18,7 @@ from typing import Any
 from qet.infer.decoding import DecodeConfig, Generation
 
 
-def make_llm(model_id: str, revision: str, *, lora: bool, max_model_len: int = 16384, memory: float = 0.85,
+def make_llm(model_id: str, revision: str, *, lora: bool, max_model_len: int = 32768, memory: float = 0.85,
              seed: int = 0) -> Any:  # fmt: skip
     """The engine for one backbone at its pinned revision, with prefix caching (prompts of one task share their
     system message and tool list) and room for one rank-64 adapter."""
@@ -64,7 +64,9 @@ class VLLMSampler:
         for out in outs:
             c = out.outputs[0]
             ids = list(c.token_ids)
-            ended = c.finish_reason == "stop"  # the only stop is the end-of-turn token
+            # The only stop is the end-of-turn token. vLLM 0.11 checks the length cap first, so an end of turn that
+            # is also the last allowed token comes back as "length": the Hugging Face loop counts it as ended.
+            ended = c.finish_reason == "stop" or (bool(ids) and ids[-1] == self.eot_id)
             if ended and (not ids or ids[-1] != self.eot_id):
                 ids.append(self.eot_id)  # a backend that leaves the stop token out
             lp = c.cumulative_logprob
