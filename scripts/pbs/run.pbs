@@ -35,7 +35,13 @@ if [[ "${CUDA_VISIBLE_DEVICES:-}" == GPU-* ]]; then
 fi
 $PY -c 'import qet; print("qet from", qet.__file__)'
 nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
-if [ -n "${SCRIPT:-}" ]; then
+if [ -n "${BATCH:-}" ]; then
+  # an evaluation batch: one config per line, run one after another in one process (they share a vLLM engine)
+  mapfile -t configs < "$BATCH"
+  args=()
+  for c in "${configs[@]}"; do [ -n "$c" ] && args+=(--config "$c"); done
+  $PY -m qet.run "${args[@]}" --runlog "$MAIN/docs/RUNLOG.md"
+elif [ -n "${SCRIPT:-}" ]; then
   # shellcheck disable=SC2086  # ARGS is a list of words
   $PY "$SCRIPT" $ARGS --runlog "$MAIN/docs/RUNLOG.md"
 else

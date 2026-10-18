@@ -39,6 +39,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-031 | Proposed | M1.6 job plan: staged submission, walltime, budget guard |
 | D-032 | Accepted | M1.7 evaluation plan (the human, 2026-10-18) |
 | D-033 | Proposed | Design of the M1.7 training extras: data curve and false-independence ablation |
+| D-034 | Accepted | At most 2 GPUs at once (the human, 2026-10-18) |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -544,6 +545,15 @@ their transitive reduction (`inject_false_independence`, rate 0.5, seed 0): a tr
 its ends, so the lattice trains on some orders that are illegal in truth. It is compared with train-c6-qwen7b-s0 on the
 frozen test set. Evaluation as in D-032 for configuration 6. Cost: about 19 GPU-hours of training (five runs) plus
 evaluation. Default: as described; cheap to reverse before the runs start.
+
+### D-034 At most 2 GPUs at once (the human, 2026-10-18)
+After the 31 remaining training runs were submitted together (D-031a), 34 GPUs ran at once and the human's quota dropped
+fast. The human said "Don't use so many Gpus. Limit the number to two"; asked whether to cancel running jobs (losing
+about 56 spent GPU-hours) or let them finish, the human chose "Finish these, then max 2". So the 33 running training
+jobs finish, and from then on at most 2 jobs run or wait in the queue at once: `scripts/pbs/submit.sh` refuses a
+submission beyond that (QET_MAX_GPUS, default 2), and longer lists run as two PBS dependency chains (`--after JOB`,
+depend=afterany), whose held jobs use no GPU. The limit changes the rate, not the total GPU-hours of a plan; reports
+give both. This replaces D-031(a)'s submission of the 31 runs together for all later work.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
