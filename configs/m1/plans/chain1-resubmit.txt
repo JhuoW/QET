@@ -1,0 +1,8 @@
+# M1.7 extras, chain 1 re-submitted after the data-curve revision (D-033a): the 224-graph warm-up takes the place of the
+# 2,500-graph runs (jobs 88288 and 88290, deleted before they started), then the configuration-2 stateful runs (formerly
+# jobs 88308, 88310 and 88312, deleted and re-submitted unchanged so that they follow the warm-up). One chain behind
+# job 88286 (D-034); the 224-graph training runs are appended once the warm-up has completed.
+config configs/m1/warmup-quotient-qwen7b-n224-s0.yaml 01:00:00
+config configs/m1/train-c2-qwen7b-stateful-s0.yaml 03:00:00
+config configs/m1/train-c2-qwen7b-stateful-s1.yaml 03:00:00
+config configs/m1/train-c2-qwen7b-stateful-s2.yaml 03:00:00
