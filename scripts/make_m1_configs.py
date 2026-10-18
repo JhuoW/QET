@@ -135,8 +135,15 @@ def extras_warmups(steps: int) -> None:
 
 
 def extras_train() -> None:
-    parent = parents([("quotient", "qwen7b", s, v) for v, s in EXTRA_WARMUPS])
+    parent = {}
+    for v, seed in EXTRA_WARMUPS:  # variants whose warm-up has not run yet are skipped (run again later)
+        try:
+            parent.update(parents([("quotient", "qwen7b", seed, v)]))
+        except SystemExit:
+            print(f"skipped variant {v}, seed {seed}: its warm-up has not completed")
     for c, variant, seed in EXTRA_TRAIN:
+        if ("quotient", "qwen7b", seed, variant) not in parent:
+            continue
         data = base(f"c{c}-qwen7b-{variant}", c, "qwen7b", seed, variant)
         data["train"] = {"token_budget": EXTRA_BUDGET.get(variant, BUDGET),
                          "parent": parent[("quotient", "qwen7b", seed, variant)], "k": 4,
