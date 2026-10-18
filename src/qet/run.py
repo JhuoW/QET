@@ -31,7 +31,9 @@ RUNLOG_PATH = REPO / "docs" / "RUNLOG.md"
 
 
 def _rel(path: str | Path) -> str:
-    p = Path(path).resolve()
+    """A repository-relative path when the path is inside the repository. Symlinks are kept, not resolved: a pinned job
+    checkout (D-025b) links results/raw and checkpoints to the main repository's folders."""
+    p = Path(os.path.abspath(path))
     return str(p.relative_to(REPO)) if p.is_relative_to(REPO) else str(p)
 
 
@@ -498,13 +500,15 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--limit", type=int, help="at most N training graphs and N test tasks (smoke checks)")
     dirty_help = "development only: a dirty tree, recorded in the manifest; never a reported run"
     parser.add_argument("--allow-dirty", action="store_true", help=dirty_help)
+    parser.add_argument("--runlog", type=Path, default=RUNLOG_PATH, help="the run log to append to (pinned jobs: the "
+                        "main repository's docs/RUNLOG.md, D-025b)")  # fmt: skip
     args = parser.parse_args(argv)
     cfg = load_config(args.config)
     if args.dry_run:
         os.environ.setdefault("HF_HUB_OFFLINE", "1")  # read the cache only
         print(format_plan(plan(cfg, limit=args.limit)))
         return
-    print(run(cfg, limit=args.limit, allow_dirty=args.allow_dirty))
+    print(run(cfg, limit=args.limit, allow_dirty=args.allow_dirty, runlog_path=args.runlog))
 
 
 if __name__ == "__main__":

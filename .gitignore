@@ -1,8 +1,9 @@
 # Written by code, never committed (AGENTS.md)
-/results/raw/
-/checkpoints/
-/data/
-/logs/
+# no trailing slash: in a pinned job checkout (D-025b) these are symlinks to the main repository's folders
+/results/raw
+/checkpoints
+/data
+/logs
 /docs/.RUNLOG.md.lock
 /docs/.RUNLOG.md.*.tmp
 .env

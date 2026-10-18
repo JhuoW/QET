@@ -347,6 +347,13 @@ process; untracked files under third_party/ and top-level .py files also count a
 starts the run evaluates. For M1, adapters verify with the environment's checker the exact trace they compile
 (the toy env regenerates an identical one).
 
+Update 2026-10-18 (b) implemented: `scripts/pbs/submit.sh CONFIG [WALLTIME]` refuses uncommitted changes, makes
+~/qet-worktrees/<commit> (`git worktree add --detach`, FuncBenchGen cloned at its pinned commit from this repository's
+submodule with a command-line URL override, so no network and no change to .git/config), links results/raw, checkpoints,
+data and logs to this repository's folders (ignored without trailing slashes, so the links are ignored too), checks the
+checkout is clean and submits run.pbs, which puts the checkout's src first on PYTHONPATH (the editable install's path
+entry points at the main repository) and appends the RUNLOG row to the main repository's docs/RUNLOG.md (`python -m
+qet.run --runlog`). Recorded paths keep the symlinks, so they stay repository-relative.
 ### D-026 Inference and evaluation details (end-of-E1 review)
 `src/qet/infer/`, `src/qet/eval/`, `tests/train/test_scoring.py`. (a) The GPU test's bf16-vs-float32 check keeps the
 bound first committed, |delta log pi| < 1.0 nat; bf16 rounding alone reaches 0.899 nats there (2.7% of a mean log pi
