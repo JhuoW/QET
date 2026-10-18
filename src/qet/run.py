@@ -467,8 +467,9 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory, parent=None
 
 
 def _format_checker(cfg, ds, fmt, model, out: Path, checks: list) -> Callable[[int], None]:
-    """D-010: the format-error rate on the first `tasks` evaluation tasks (dev) at the configured warm-up steps,
-    greedy, with the run's decoding limit; each check is appended to `checks` and to format_check.jsonl."""
+    """D-010: the format-error rate on `tasks` evaluation tasks (dev) spread evenly over the run's list (the dev
+    manifest is ordered by grid cell), greedy, with the run's decoding limit, at the configured warm-up steps; each
+    check is appended to `checks` and to format_check.jsonl."""
     from qet.eval.format_check import format_errors
     from qet.infer.decoding import DecodeConfig, HFSampler
 
@@ -477,15 +478,18 @@ def _format_checker(cfg, ds, fmt, model, out: Path, checks: list) -> Callable[[i
     if n > len(ds.test_tasks):
         raise ValueError(f"format_check.tasks = {n}, but the run has {len(ds.test_tasks)} evaluation tasks")
     policy = HFSampler(model, fmt.eot_id, DecodeConfig("greedy", 1.0, 1.0, cfg.eval.max_new_tokens))
+    picked = [i * len(ds.test_tasks) // n for i in range(n)]
+    tasks, records = [ds.test_tasks[i] for i in picked], [ds.test_records[i] for i in picked]
 
     def check(step: int) -> None:
         if step not in at:
             return
         clock = time.perf_counter()
-        res = format_errors(ds.test_tasks[:n], ds.test_records[:n], policy, fmt, ds.contracts,
+        res = format_errors(tasks, records, policy, fmt, ds.contracts,
                             renderer=cfg.method.renderer, truncation=cfg.data.truncation, states_per_task=per,
                             seed=cfg.eval.eval_seed, run_seed=cfg.seed)  # fmt: skip
-        checks.append({"step": step, **res, "seconds": time.perf_counter() - clock})
+        checks.append({"step": step, **res, "seconds": time.perf_counter() - clock,
+                       "tasks": [t.task_id for t in tasks]})  # fmt: skip
         with open(out / "format_check.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(checks[-1]) + "\n")
 

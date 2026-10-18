@@ -1,0 +1,40 @@
+# M1.5 (D-010, D-030g): the format warm-up length, measured once. Demo-order SFT in the quotient renderer
+# (configurations 2-6 share it) on Qwen2.5-7B-Instruct, seed 0, with the dev format-error rate checked at the listed
+# steps on 100 dev tasks spread over the grid (2 states each). The warm-up length is the first checked step with a
+# rate below 1%; every warm-up run then uses it. Training data and settings are the M1.6 runs' (D-030: B = 125M).
+milestone: M1
+name: warmup-measure-qwen7b
+configuration: "2"
+seed: 0
+backbone: Qwen/Qwen2.5-7B-Instruct
+dtype: bfloat16
+data:
+  env: funcbenchgen
+  kind: grid
+  source: {compile_run: results/raw/M1-compile-20261018T023058Z, train: train, eval: dev}
+  train: {start: 0, count: 5000}
+  test: {start: 0, count: 896}
+train:
+  token_budget: 125000000
+  warmup_steps: 40
+  warmup_only: true
+  format_check: {at: [0, 5, 10, 15, 20, 30, 40], tasks: 100, states_per_task: 2}
+  lora_rank: 64
+  lora_alpha: 128
+  batch_graphs: 4
+  lr: 1.0e-4
+  warmup: 0.03
+  max_grad_norm: 1.0
+  k: 4
+  s_max: 256
+  max_tokens: 8192  # D-024e: 16384 does not fit one H200
+  max_target_tokens: 8192
+  checkpoint_fractions: [1.0]
+eval:
+  decoding:
+    - {mode: greedy}
+  max_new_tokens: 512  # D-030c
+  resume_prefix_tasks: 0
+estimate:  # from the M1.4 pilot: warm-up pass 2 (demo-order SFT) and decoding
+  train_tokens_per_second: 7300
+  eval_tokens_per_second: 1000
