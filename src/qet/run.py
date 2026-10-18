@@ -78,9 +78,14 @@ def plan(cfg: RunConfig, *, limit: int | None = None) -> dict[str, Any]:
         per_epoch = sum(p1) + sum(p2)
         _, w2, _ = graph_tokens(warmup_method(cfg), False)
         warmup = round(t.warmup_steps * t.batch_graphs * sum(w2) / max(1, len(w2)))
+        if t.parent:  # the parent's warm-up tokens count toward this run's budget (D-010)
+            try:
+                warmup = parent_record(cfg, ds)["tokens_used"]
+            except FileNotFoundError:  # the warm-up run has not run yet: assume this config's own warm-up length
+                pass
         steps_per_epoch = math.ceil(len(p2) / t.batch_graphs)
-        epochs = max(0, t.token_budget - warmup) / per_epoch if per_epoch else 0.0
-        train_tokens = t.token_budget
+        epochs = 0.0 if t.warmup_only else max(0, t.token_budget - warmup) / per_epoch if per_epoch else 0.0
+        train_tokens = warmup if t.warmup_only else t.token_budget - (warmup if t.parent else 0)
         out["train"] = {
             "token_budget": t.token_budget,
             "warmup_tokens_estimate": warmup,
@@ -92,6 +97,8 @@ def plan(cfg: RunConfig, *, limit: int | None = None) -> dict[str, Any]:
             "states_per_graph": {"mean": sum(states) / max(1, len(states)), "max": max(states, default=0)},
             "epochs": epochs,
             "steps": math.ceil(epochs * steps_per_epoch) + t.warmup_steps,
+            "warmup_only": t.warmup_only,
+            "parent": t.parent,
             "max_minutes": t.max_minutes,  # epochs and steps above assume the budget, not this stop, ends training
         }  # fmt: skip
     episodes = eval_tokens = 0
@@ -102,7 +109,13 @@ def plan(cfg: RunConfig, *, limit: int | None = None) -> dict[str, Any]:
         prompts = [len(fmt.prompt_ids(render_messages(task_x[rec.task_id], steps[:k], ds.contracts, m.renderer,
                                                       cfg.data.truncation))) for k in range(rec.n + 1)]  # fmt: skip
         per_task[rec.task_id] = (prompts, sum(prompts) + (rec.n + 1) * cfg.eval.max_new_tokens)
-    for _, _, rollouts in decoding_settings(cfg.eval):
+    if cfg.train and cfg.train.warmup_only:  # no episodes; each format check acts once per sampled state (D-010)
+        fc = cfg.train.format_check or {"at": [], "tasks": 0}
+        checked = list(per_task.values())[: int(fc["tasks"])]
+        per_state = sum(sum(v[0]) / len(v[0]) for v in checked) / max(1, len(checked)) + cfg.eval.max_new_tokens
+        eval_tokens = round(len(fc["at"]) * len(checked) * int(fc.get("states_per_task", 2)) * per_state)
+        out["eval"] = {"episodes": 0, "format_checks": len(fc["at"]), "tokens_estimate": eval_tokens}
+    for _, _, rollouts in decoding_settings(cfg.eval) if not (cfg.train and cfg.train.warmup_only) else ():
         episodes += rollouts * len(per_task)
         eval_tokens += rollouts * sum(v[1] for v in per_task.values())
     for rec in ds.test_records[: cfg.eval.resume_prefix_tasks]:
@@ -110,7 +123,7 @@ def plan(cfg: RunConfig, *, limit: int | None = None) -> dict[str, Any]:
         for s in starts(rec, cfg.eval.eval_seed):  # the same starts the run evaluates
             episodes += 1
             eval_tokens += sum(prompts[s.depth :]) + (rec.n + 1 - s.depth) * cfg.eval.max_new_tokens
-    out["eval"] = {"episodes": episodes, "tokens_estimate": eval_tokens}
+    out.setdefault("eval", {"episodes": episodes, "tokens_estimate": eval_tokens})
     tps_train, tps_eval = cfg.estimate.get("train_tokens_per_second"), cfg.estimate.get("eval_tokens_per_second")
     hours = None
     if (tps_train or not train_tokens) and tps_eval:
@@ -146,6 +159,49 @@ def load_model(cfg: RunConfig):
         b.model_id, revision=b.revision, dtype=dtype, attn_implementation="sdpa"
     )
     return model.to("cuda" if torch.cuda.is_available() else "cpu").eval()
+
+
+def _train_data(spec: dict[str, Any]) -> dict[str, Any]:
+    """The part of a data spec that fixes the training records (everything but the evaluation split)."""
+    return {k: v for k, v in spec.items() if k not in ("eval", "test")}
+
+
+def parent_record(cfg: RunConfig, ds: Any) -> dict[str, Any] | None:
+    """The warm-up run a config starts from (D-010, D-025d), checked: a completed warm-up run with the same backbone,
+    seed, renderer, LoRA shape and training data, whose checkpoint files match the hashes in its manifest."""
+    from qet.manifest import sha256_file
+    from qet.train.chat import backbone
+
+    t = cfg.train
+    if t is None or not t.parent:
+        return None
+    folder = Path(t.parent) if Path(t.parent).is_absolute() else REPO / t.parent
+    pm = json.loads((folder / "manifest.json").read_text())
+    pt = (pm.get("budgets") or {}).get("train") or {}
+    dm = (pm.get("data_manifest") or {}).get("path")
+    data = json.loads((Path(dm) if Path(dm).is_absolute() else REPO / dm).read_text()) if dm else {}
+    problems = [msg for bad, msg in [
+        (pm.get("status") != "completed", "did not complete"),
+        (not pt.get("warmup_only"), "is not a warm-up run"),
+        (pm["backbone"]["id"] != cfg.backbone or pm["backbone"]["revision"] != backbone(cfg.backbone).revision,
+         "has another backbone"),
+        (pm["seed"] != cfg.seed, f"has seed {pm['seed']}, this run {cfg.seed}"),
+        (pm["configuration"]["renderer"] != cfg.method.renderer, "used another renderer"),
+        ((pt.get("lora_rank"), pt.get("lora_alpha")) != (t.lora_rank, t.lora_alpha), "has another LoRA shape"),
+        (_train_data(data.get("spec", {})) != _train_data(ds.spec), "trained on other data"),
+    ] if bad]  # fmt: skip
+    if problems:
+        raise ValueError(f"parent {folder}: " + "; ".join(problems))
+    (rel, files), *more = pm["outputs"]["checkpoints"].items()
+    if more:
+        raise ValueError(f"parent {folder} has more than one checkpoint")
+    path = Path(rel) if Path(rel).is_absolute() else REPO / rel
+    for name, digest in files.items():
+        if sha256_file(path / name) != digest:
+            raise ValueError(f"{path / name} does not match the parent's manifest")
+    tok = pm["tokens"]
+    return {"run_id": pm["run_id"], "path": rel, "files": files, "steps": tok["warmup"]["steps"],
+            "scored": tok["scored"], "gradient": tok["gradient"], "tokens_used": tok["budget_used"]}  # fmt: skip
 
 
 def _terminate(signum: int, frame: Any) -> None:
@@ -187,6 +243,7 @@ def run(
     fmt = ChatFormat.load(cfg.backbone)
     ds = build_dataset(cfg.data, limit=limit)
     decodings = decoding_settings(cfg.eval)
+    parent = parent_record(cfg, ds)
     resume = [{"task_id": rec.task_id, "condition": s.condition, "depth": s.depth, "order": list(s.order)}
               for rec in ds.test_records[: cfg.eval.resume_prefix_tasks]
               for s in starts(rec, cfg.eval.eval_seed)]  # fmt: skip
@@ -221,7 +278,7 @@ def run(
         "libraries": libraries(),
         "tokens": None,
         "gpu_hours": None,
-        "parent_checkpoint": None,  # the format warm-up runs inside this run (D-010, D-025d)
+        "parent_checkpoint": parent,  # the shared warm-up this run starts from, or None (D-010, D-025d)
         "status": "running",
     }  # fmt: skip
     out.mkdir(parents=True)
@@ -242,7 +299,9 @@ def run(
             row_added = True
             data_path, data_sha = write_dataset(ds, out / "data", resume_starts=resume)
             manifest.update(data_manifest={"path": _rel(data_path), "sha256": data_sha})
-            tokens, outputs, seconds = _execute(cfg, ds, fmt, out, Path(checkpoints_root) / run_id, model_factory)
+            tokens, outputs, seconds = _execute(
+                cfg, ds, fmt, out, Path(checkpoints_root) / run_id, model_factory, parent
+            )
             total = (time.perf_counter() - t0) / 3600 * gpus
             phases = {k: v / 3600 * gpus for k, v in seconds.items()}
             manifest.update(tokens=tokens, gpu_hours=total, gpu_hours_by_phase=phases, outputs=outputs,
@@ -269,7 +328,7 @@ def run(
     return out
 
 
-def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory) -> tuple[dict, dict, dict[str, float]]:
+def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory, parent=None) -> tuple[dict, dict, dict]:
     import torch
 
     from qet.eval.metrics import summarize
@@ -287,6 +346,7 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory) -> tuple[di
     seconds["load"] = time.perf_counter() - clock
     tokens: dict[str, Any] = {}
     checkpoints: dict[str, dict[str, str]] = {}
+    checks: list[dict[str, Any]] = []  # format checks of a warm-up run (D-010)
     t, m = cfg.train, cfg.method
     clock = time.perf_counter()
     with open(out / "train_log.jsonl", "w", encoding="utf-8") as log:
@@ -300,22 +360,19 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory) -> tuple[di
             return write
 
         if t is not None:
-            model = add_lora(model, rank=t.lora_rank, alpha=t.lora_alpha, seed=cfg.seed)
+            if parent is not None:  # the shared warm-up's adapter, checked against its manifest by parent_record
+                from peft import PeftModel
+
+                path = Path(parent["path"]) if Path(parent["path"]).is_absolute() else REPO / parent["path"]
+                model = PeftModel.from_pretrained(model, str(path), is_trainable=True).eval()
+            else:
+                model = add_lora(model, rank=t.lora_rank, alpha=t.lora_alpha, seed=cfg.seed)
             scorer = LMScorer(model, pad_id=fmt.eot_id, max_tokens=t.max_tokens, max_target_tokens=t.max_target_tokens)
             builder_args = {"run_seed": cfg.seed, "truncation": cfg.data.truncation, "k": t.k, "s_max": t.s_max}
             used, warm = 0, {"steps": 0, "scored": TokenCounts().to_json(), "gradient": TokenCounts().to_json()}
-            if t.warmup_steps:
-                wcfg = TrainConfig(token_budget=t.token_budget, batch_graphs=t.batch_graphs, lr=t.lr, warmup=0.0,
-                                   max_grad_norm=t.max_grad_norm, seed=cfg.seed, checkpoint_fractions=(),
-                                   max_steps=t.warmup_steps)  # fmt: skip
-                wopt = torch.optim.AdamW(scorer.parameters(), lr=t.lr)
-                warm = train(scorer, PackBuilder(fmt, ds.contracts, warmup_method(cfg), **builder_args),
-                             ds.train_records, wcfg, wopt, on_step=logger("warmup"))  # fmt: skip
-                used = warm["tokens_used"]
-            tcfg = TrainConfig(token_budget=t.token_budget, batch_graphs=t.batch_graphs, lr=t.lr, warmup=t.warmup,
-                               max_grad_norm=t.max_grad_norm, seed=cfg.seed, plus=t.plus,
-                               checkpoint_fractions=t.checkpoint_fractions, tokens_at_start=used,
-                               max_minutes=t.max_minutes)  # fmt: skip
+            before = {"scored": 0, "gradient": 0}  # the parent's tokens, which count toward the budget (D-010)
+            if parent is not None:
+                used, before = parent["tokens_used"], {"scored": parent["scored"], "gradient": parent["gradient"]}
 
             def save(label: str, row: dict[str, Any]) -> None:
                 path = ckpt_dir / label
@@ -325,15 +382,48 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory) -> tuple[di
                 (path / "qet_checkpoint.json").write_text(json.dumps({**meta, "files": files}) + "\n", encoding="utf-8")
                 checkpoints[_rel(path)] = files
 
-            opt = torch.optim.AdamW(scorer.parameters(), lr=t.lr)
-            summary = train(scorer, PackBuilder(fmt, ds.contracts, m, **builder_args), ds.train_records, tcfg, opt,
-                            on_step=logger("train"), on_checkpoint=save)  # fmt: skip
-            tokens.update(warmup={"steps": warm["steps"], "scored": warm["scored"], "gradient": warm["gradient"]},
-                          train={k: summary[k] for k in ("steps", "scored", "gradient", "diagnostic")},
-                          scored=warm["scored"]["tokens"] + summary["scored"]["tokens"],
-                          gradient=warm["gradient"]["tokens"] + summary["gradient"]["tokens"],
-                          budget_used=summary["tokens_used"])  # fmt: skip
+            if t.warmup_steps:
+                wcfg = TrainConfig(token_budget=t.token_budget, batch_graphs=t.batch_graphs, lr=t.lr, warmup=0.0,
+                                   max_grad_norm=t.max_grad_norm, seed=cfg.seed, checkpoint_fractions=(),
+                                   max_steps=t.warmup_steps)  # fmt: skip
+                wopt = torch.optim.AdamW(scorer.parameters(), lr=t.lr)
+                on_step = logger("warmup")
+                if t.format_check:
+                    check = _format_checker(cfg, ds, fmt, model, out, checks)
+                    check(0)
+                    log_step = on_step
+                    on_step = lambda row: (log_step(row), check(row["step"]))  # noqa: E731
+                warm = train(scorer, PackBuilder(fmt, ds.contracts, warmup_method(cfg), **builder_args),
+                             ds.train_records, wcfg, wopt, on_step=on_step)  # fmt: skip
+                used = warm["tokens_used"]
+            if t.warmup_only:  # D-025d: the checkpoint that configuration runs name as their parent
+                save("warmup", {"step": warm["steps"], "epoch": 0, "tokens_used": used,
+                                "budget_fraction": used / t.token_budget})  # fmt: skip
+                tokens.update(warmup={"steps": warm["steps"], "scored": warm["scored"], "gradient": warm["gradient"]},
+                              scored=warm["scored"]["tokens"], gradient=warm["gradient"]["tokens"],
+                              budget_used=used)  # fmt: skip
+            else:
+                tcfg = TrainConfig(token_budget=t.token_budget, batch_graphs=t.batch_graphs, lr=t.lr, warmup=t.warmup,
+                                   max_grad_norm=t.max_grad_norm, seed=cfg.seed, plus=t.plus,
+                                   checkpoint_fractions=t.checkpoint_fractions, tokens_at_start=used,
+                                   max_minutes=t.max_minutes)  # fmt: skip
+                opt = torch.optim.AdamW(scorer.parameters(), lr=t.lr)
+                summary = train(scorer, PackBuilder(fmt, ds.contracts, m, **builder_args), ds.train_records, tcfg,
+                                opt, on_step=logger("train"), on_checkpoint=save)  # fmt: skip
+                tokens.update(warmup={"steps": warm["steps"], "scored": warm["scored"], "gradient": warm["gradient"]},
+                              train={k: summary[k] for k in ("steps", "scored", "gradient", "diagnostic")},
+                              parent=before if parent is not None else None,
+                              scored=before["scored"] + warm["scored"]["tokens"] + summary["scored"]["tokens"],
+                              gradient=before["gradient"] + warm["gradient"]["tokens"] + summary["gradient"]["tokens"],
+                              budget_used=summary["tokens_used"])  # fmt: skip
     seconds["train"] = time.perf_counter() - clock
+    if t is not None and t.warmup_only:  # no episodes: the format checks are the evaluation (D-010)
+        below = next((c["step"] for c in checks if c["rate"] is not None and c["rate"] < 0.01), None)
+        metrics = {"format_check": checks, "first_step_below_1_percent": below}
+        (out / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
+        outputs = {"metrics": _rel(out / "metrics.json"), "train_log": _rel(out / "train_log.jsonl"),
+                   "predictions": [], "checkpoints": checkpoints}  # fmt: skip
+        return tokens, outputs, seconds
 
     clock = time.perf_counter()
     pred_dir = out / "predictions"
@@ -372,6 +462,32 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory) -> tuple[di
     outputs = {"metrics": _rel(out / "metrics.json"), "train_log": _rel(out / "train_log.jsonl"),
                "predictions": sorted(_rel(p) for p in pred_dir.iterdir()), "checkpoints": checkpoints}  # fmt: skip
     return tokens, outputs, seconds
+
+
+def _format_checker(cfg, ds, fmt, model, out: Path, checks: list) -> Callable[[int], None]:
+    """D-010: the format-error rate on the first `tasks` evaluation tasks (dev) at the configured warm-up steps,
+    greedy, with the run's decoding limit; each check is appended to `checks` and to format_check.jsonl."""
+    from qet.eval.format_check import format_errors
+    from qet.infer.decoding import DecodeConfig, HFSampler
+
+    fc = cfg.train.format_check
+    n, per, at = int(fc["tasks"]), int(fc.get("states_per_task", 2)), set(fc["at"])
+    if n > len(ds.test_tasks):
+        raise ValueError(f"format_check.tasks = {n}, but the run has {len(ds.test_tasks)} evaluation tasks")
+    policy = HFSampler(model, fmt.eot_id, DecodeConfig("greedy", 1.0, 1.0, cfg.eval.max_new_tokens))
+
+    def check(step: int) -> None:
+        if step not in at:
+            return
+        clock = time.perf_counter()
+        res = format_errors(ds.test_tasks[:n], ds.test_records[:n], policy, fmt, ds.contracts,
+                            renderer=cfg.method.renderer, truncation=cfg.data.truncation, states_per_task=per,
+                            seed=cfg.eval.eval_seed, run_seed=cfg.seed)  # fmt: skip
+        checks.append({"step": step, **res, "seconds": time.perf_counter() - clock})
+        with open(out / "format_check.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(checks[-1]) + "\n")
+
+    return check
 
 
 def main(argv: list[str] | None = None) -> None:

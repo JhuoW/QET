@@ -67,6 +67,9 @@ class TrainSettings:
     plus: bool = False
     warmup_steps: int = 0  # D-010 format warm-up: demo-order SFT steps in this configuration's renderer
     max_minutes: float | None = None  # stop training after this wall time (pilots that must fit a job's walltime)
+    warmup_only: bool = False  # a warm-up run (D-010, D-025d): the warm-up steps, then its checkpoint; no training
+    parent: str | None = None  # a warm-up run folder whose checkpoint this run starts from; its tokens count in B
+    format_check: dict[str, Any] | None = None  # warm-up runs: {at: [steps], tasks, states_per_task} (D-010)
 
 
 @dataclass(frozen=True)
@@ -150,6 +153,19 @@ def load_config(path: str | Path) -> RunConfig:
         train = TrainSettings(**t)
         if train.token_budget <= 0 or not all(0 < f <= 1 for f in train.checkpoint_fractions):
             raise ValueError("train: token_budget must be positive and checkpoint fractions in (0, 1]")
+        if train.warmup_only and (train.warmup_steps <= 0 or train.parent):
+            raise ValueError("train: a warm-up run needs warmup_steps > 0 and no parent")
+        if train.parent and train.warmup_steps:
+            raise ValueError("train: a run with a parent warm-up checkpoint does no warm-up of its own")
+        if train.format_check is not None:
+            fc = train.format_check
+            _check_keys("train.format_check", fc, {"at", "tasks"}, {"states_per_task"})
+            at = fc["at"]
+            ok = isinstance(at, list) and at == sorted(set(at)) and all(isinstance(x, int) and x >= 0 for x in at)
+            if not train.warmup_only or not ok or (at and at[-1] > train.warmup_steps):
+                raise ValueError("train.format_check: warm-up runs only, at = increasing steps within warmup_steps")
+            if int(fc["tasks"]) < 1 or int(fc.get("states_per_task", 2)) < 1:
+                raise ValueError("train.format_check: tasks and states_per_task must be positive")
 
     e = data["eval"]
     _check_keys("eval", e, {"decoding"}, {"max_new_tokens", "resume_prefix_tasks", "eval_seed"})
@@ -167,6 +183,8 @@ def load_config(path: str | Path) -> RunConfig:
             raise ValueError("decoding needs temperature > 0 and 0 < top_p <= 1")
     eval_cfg = EvalSettings(decoding, int(e.get("max_new_tokens", 128)), int(e.get("resume_prefix_tasks", 0)),
                             int(e.get("eval_seed", 0)))  # fmt: skip
+    if train is not None and train.warmup_only and eval_cfg.resume_prefix_tasks:
+        raise ValueError("a warm-up run evaluates by its format checks only (resume_prefix_tasks must be 0)")
     return RunConfig(
         path=str(path),
         sha256=hashlib.sha256(raw).hexdigest(),

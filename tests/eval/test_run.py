@@ -307,3 +307,76 @@ def test_the_run_log_appends_and_updates_rows(tmp_path):
         runlog.append_row(path, {"run_id": "r3", "result": 0.9})
     assert Path(path).read_text().splitlines()[2] == runlog.HEADER
     assert "| a \\| b |" in Path(path).read_text()  # stored escaped
+
+
+def warm_configs(tmp_path, **train):
+    """A warm-up run (D-010, D-025d) and the train section its configuration runs share."""
+    base = {"token_budget": 60_000, "batch_graphs": 2, "checkpoint_fractions": [1.0]}
+    warm = small_config(tmp_path, name="warmup", train={**base, "warmup_steps": 2, "warmup_only": True, **train},
+                        eval={"decoding": [{"mode": "greedy"}], "max_new_tokens": 6})  # fmt: skip
+    return warm, base
+
+
+def test_warm_up_and_parent_settings_are_validated(tmp_path):
+    base = {"token_budget": 60_000}
+    bad = [
+        {**base, "warmup_only": True},  # no warm-up steps
+        {**base, "warmup_only": True, "warmup_steps": 2, "parent": "x"},
+        {**base, "warmup_steps": 2, "parent": "x"},  # a parent's run does no warm-up of its own
+        {**base, "warmup_steps": 2, "format_check": {"at": [0], "tasks": 2}},  # checks belong to warm-up runs
+        {**base, "warmup_steps": 2, "warmup_only": True, "format_check": {"at": [0, 3], "tasks": 2}},  # past the end
+        {**base, "warmup_steps": 2, "warmup_only": True, "format_check": {"at": [2, 0], "tasks": 2}},  # unsorted
+    ]
+    for train in bad:
+        with pytest.raises(ValueError):
+            small_config(tmp_path, train=train)
+
+
+@pytest.mark.slow  # three tiny-model runs
+def test_a_shared_warm_up_equals_the_inline_one(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    (tmp_path / "c").mkdir()
+    warm, base = warm_configs(tmp_path / "a", format_check={"at": [0, 2], "tasks": 2, "states_per_task": 2})
+    log = fresh_runlog(tmp_path)
+    common = {"allow_dirty": True, "results_root": tmp_path / "raw", "checkpoints_root": tmp_path / "ckpt",
+              "runlog_path": log, "model_factory": tiny_model}  # fmt: skip
+    w = runner.run(warm, **common)
+    wm = json.loads((w / "manifest.json").read_text())
+    metrics = json.loads((w / "metrics.json").read_text())
+    assert wm["status"] == "completed" and wm["tokens"]["warmup"]["steps"] == 2 and wm["outputs"]["predictions"] == []
+    assert [c["step"] for c in metrics["format_check"]] == [0, 2] and metrics["format_check"][0]["states"] == 4
+    ((ckpt, files),) = wm["outputs"]["checkpoints"].items()
+    assert ckpt.endswith("/warmup") and "adapter_model.safetensors" in files
+
+    child = small_config(tmp_path / "b", name="child", train={**base, "parent": str(w)})
+    inline = small_config(tmp_path / "c", name="inline", train={**base, "warmup_steps": 2})
+    c, i = runner.run(child, **common), runner.run(inline, **common)
+    cm, im = (json.loads((x / "manifest.json").read_text()) for x in (c, i))
+    assert cm["parent_checkpoint"]["run_id"] == wm["run_id"] and cm["parent_checkpoint"]["files"] == files
+    assert cm["tokens"]["budget_used"] == im["tokens"]["budget_used"]
+    assert cm["tokens"]["gradient"] == im["tokens"]["gradient"] and cm["tokens"]["parent"]["gradient"] > 0
+
+    from safetensors.torch import load_file
+
+    def final(m):
+        (path,) = [p for p in m["outputs"]["checkpoints"] if p.endswith("frac-1")]
+        return load_file(str(Path(path) / "adapter_model.safetensors"))
+
+    a, b = final(cm), final(im)
+    assert a.keys() == b.keys() and all(torch.equal(a[k], b[k]) for k in a)  # D-025d changes nothing on CPU
+
+
+@pytest.mark.slow  # two tiny-model runs
+def test_a_parent_of_another_seed_is_refused(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    warm, base = warm_configs(tmp_path / "a")
+    log = fresh_runlog(tmp_path)
+    common = {"allow_dirty": True, "results_root": tmp_path / "raw", "checkpoints_root": tmp_path / "ckpt",
+              "runlog_path": log, "model_factory": tiny_model}  # fmt: skip
+    w = runner.run(warm, **common)
+    other = small_config(tmp_path / "b", name="child", seed=1, train={**base, "parent": str(w)})
+    with pytest.raises(ValueError, match="has seed 0, this run 1"):
+        runner.run(other, **common)
+    assert len(list((tmp_path / "raw").iterdir())) == 1  # refused before its folder existed
