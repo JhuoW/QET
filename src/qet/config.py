@@ -94,6 +94,7 @@ class RunConfig:
     train: TrainSettings | None  # None: evaluation only (the base model)
     eval: EvalSettings
     estimate: dict[str, float] = field(default_factory=dict)  # assumed tokens per second until a pilot measures them
+    checkpoint: dict[str, str] | None = None  # evaluation only: {run: results/raw/<training run>, label: frac-1}
 
     @property
     def method(self):
@@ -107,7 +108,7 @@ def load_config(path: str | Path) -> RunConfig:
         "config",
         data,
         {"milestone", "name", "configuration", "seed", "backbone", "data", "eval"},
-        {"dtype", "train", "estimate"},
+        {"dtype", "train", "estimate", "checkpoint"},
     )
     if str(data["configuration"]) not in METHODS:
         raise ValueError(f"unknown configuration {data['configuration']!r}; expected one of {sorted(METHODS)}")
@@ -185,6 +186,11 @@ def load_config(path: str | Path) -> RunConfig:
                             int(e.get("eval_seed", 0)))  # fmt: skip
     if train is not None and train.warmup_only and eval_cfg.resume_prefix_tasks:
         raise ValueError("a warm-up run evaluates by its format checks only (resume_prefix_tasks must be 0)")
+    checkpoint = data.get("checkpoint")
+    if checkpoint is not None:
+        _check_keys("checkpoint", checkpoint, {"run", "label"}, set())
+        if train is not None:
+            raise ValueError("checkpoint: evaluation-only runs load a trained checkpoint and have no train section")
     return RunConfig(
         path=str(path),
         sha256=hashlib.sha256(raw).hexdigest(),
@@ -198,4 +204,5 @@ def load_config(path: str | Path) -> RunConfig:
         train=train,
         eval=eval_cfg,
         estimate={k: float(v) for k, v in (data.get("estimate") or {}).items()},
+        checkpoint={k: str(v) for k, v in checkpoint.items()} if checkpoint else None,
     )

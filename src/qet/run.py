@@ -206,6 +206,40 @@ def parent_record(cfg: RunConfig, ds: Any) -> dict[str, Any] | None:
             "scored": tok["scored"], "gradient": tok["gradient"], "tokens_used": tok["budget_used"]}  # fmt: skip
 
 
+def checkpoint_record(cfg: RunConfig) -> dict[str, Any] | None:
+    """The trained checkpoint an evaluation-only config evaluates (M1.7), checked: a completed training run of the
+    same configuration, backbone and seed, whose checkpoint files match the hashes in its manifest."""
+    from qet.manifest import sha256_file
+    from qet.train.chat import backbone
+
+    if not cfg.checkpoint:
+        return None
+    folder = Path(cfg.checkpoint["run"])
+    folder = folder if folder.is_absolute() else REPO / folder
+    tm = json.loads((folder / "manifest.json").read_text())
+    problems = [msg for bad, msg in [
+        (tm.get("status") != "completed", "did not complete"),
+        (tm["configuration"]["id"] != cfg.configuration, f"trained configuration {tm['configuration']['id']}"),
+        (tm["backbone"]["id"] != cfg.backbone or tm["backbone"]["revision"] != backbone(cfg.backbone).revision,
+         "has another backbone"),
+        (tm["seed"] != cfg.seed, f"has seed {tm['seed']}, this run {cfg.seed}"),
+    ] if bad]  # fmt: skip
+    if problems:
+        raise ValueError(f"checkpoint run {folder}: " + "; ".join(problems))
+    label = cfg.checkpoint["label"]
+    hits = [(rel, files) for rel, files in tm["outputs"]["checkpoints"].items() if Path(rel).name == label]
+    if len(hits) != 1:
+        raise ValueError(f"checkpoint run {folder} has no single checkpoint labelled {label!r}")
+    ((rel, files),) = hits
+    path = Path(rel) if Path(rel).is_absolute() else REPO / rel
+    for name, digest in files.items():
+        if sha256_file(path / name) != digest:
+            raise ValueError(f"{path / name} does not match its training run's manifest")
+    meta = json.loads((path / "qet_checkpoint.json").read_text())
+    return {"run_id": tm["run_id"], "label": label, "path": rel, "files": files,
+            **{k: meta.get(k) for k in ("step", "tokens_used", "budget_fraction")}}  # fmt: skip
+
+
 def _terminate(signum: int, frame: Any) -> None:
     """A scheduler's SIGTERM (walltime, qdel) becomes SystemExit, so the run is recorded as failed, not left running."""
     raise SystemExit(128 + signum)
@@ -246,6 +280,7 @@ def run(
     ds = build_dataset(cfg.data, limit=limit)
     decodings = decoding_settings(cfg.eval)
     parent = parent_record(cfg, ds)
+    evaluated = checkpoint_record(cfg)
     resume = [{"task_id": rec.task_id, "condition": s.condition, "depth": s.depth, "order": list(s.order)}
               for rec in ds.test_records[: cfg.eval.resume_prefix_tasks]
               for s in starts(rec, cfg.eval.eval_seed)]  # fmt: skip
@@ -281,6 +316,7 @@ def run(
         "tokens": None,
         "gpu_hours": None,
         "parent_checkpoint": parent,  # the shared warm-up this run starts from, or None (D-010, D-025d)
+        "evaluated_checkpoint": evaluated,  # evaluation-only runs: the trained checkpoint they evaluate (M1.7)
         "status": "running",
     }  # fmt: skip
     out.mkdir(parents=True)
@@ -302,7 +338,7 @@ def run(
             data_path, data_sha = write_dataset(ds, out / "data", resume_starts=resume)
             manifest.update(data_manifest={"path": _rel(data_path), "sha256": data_sha})
             tokens, outputs, seconds = _execute(
-                cfg, ds, fmt, out, Path(checkpoints_root) / run_id, model_factory, parent
+                cfg, ds, fmt, out, Path(checkpoints_root) / run_id, model_factory, parent, evaluated
             )
             total = (time.perf_counter() - t0) / 3600 * gpus
             phases = {k: v / 3600 * gpus for k, v in seconds.items()}
@@ -330,7 +366,7 @@ def run(
     return out
 
 
-def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory, parent=None) -> tuple[dict, dict, dict]:
+def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory, parent=None, evaluated=None) -> tuple:
     import torch
 
     from qet.eval.metrics import summarize
@@ -345,6 +381,11 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory, parent=None
     seconds: dict[str, float] = {}
     torch.manual_seed(cfg.seed)
     model = (model_factory or load_model)(cfg)
+    if evaluated is not None:  # checked against its training run's manifest by checkpoint_record
+        from peft import PeftModel
+
+        path = Path(evaluated["path"]) if Path(evaluated["path"]).is_absolute() else REPO / evaluated["path"]
+        model = PeftModel.from_pretrained(model, str(path)).eval()
     seconds["load"] = time.perf_counter() - clock
     tokens: dict[str, Any] = {}
     checkpoints: dict[str, dict[str, str]] = {}

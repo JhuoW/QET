@@ -398,3 +398,38 @@ def test_a_training_run_without_evaluation_tasks_only_trains(tmp_path):
     assert manifest["status"] == "completed" and manifest["tokens"]["eval"]["episodes"] == 0
     assert len(manifest["outputs"]["checkpoints"]) == 2 and manifest["outputs"]["predictions"] == []
     assert json.loads((out / "metrics.json").read_text())["standard"] == {}
+
+
+@pytest.mark.slow  # a tiny-model training run, then evaluation-only runs of its checkpoint
+def test_an_evaluation_only_run_loads_a_checked_checkpoint(tmp_path):
+    for d in ("a", "b", "c"):
+        (tmp_path / d).mkdir()
+    log = fresh_runlog(tmp_path)
+    common = {"allow_dirty": True, "results_root": tmp_path / "raw", "checkpoints_root": tmp_path / "ckpt",
+              "runlog_path": log, "model_factory": tiny_model}  # fmt: skip
+    trained = runner.run(small_config(tmp_path / "a", name="trained",
+                                      train={"token_budget": 40_000, "warmup_steps": 1, "batch_graphs": 2,
+                                             "checkpoint_fractions": [1.0]}), **common)  # fmt: skip
+    tm = json.loads((trained / "manifest.json").read_text())
+    ev = small_config(tmp_path / "b", name="eval", train=None, checkpoint={"run": str(trained), "label": "frac-1"})
+    out = runner.run(ev, **common)
+    m = json.loads((out / "manifest.json").read_text())
+    (ckpt,) = tm["outputs"]["checkpoints"]
+    assert m["status"] == "completed" and m["evaluated_checkpoint"]["run_id"] == tm["run_id"]
+    assert m["evaluated_checkpoint"]["files"] == tm["outputs"]["checkpoints"][ckpt]
+    assert m["evaluated_checkpoint"]["budget_fraction"] >= 1.0 and m["tokens"].get("budget_used") is None
+    assert (out / "predictions" / "greedy.jsonl").exists()
+
+    other = small_config(tmp_path / "c", name="eval", train=None, seed=1,
+                         checkpoint={"run": str(trained), "label": "frac-1"})  # fmt: skip
+    with pytest.raises(ValueError, match="has seed 0, this run 1"):
+        runner.run(other, **common)
+    adapter = Path(ckpt) / "adapter_model.safetensors"
+    adapter.write_bytes(adapter.read_bytes() + b"\0")
+    with pytest.raises(ValueError, match="does not match its training run"):
+        runner.run(ev, **common)
+
+
+def test_a_checkpoint_belongs_to_evaluation_only_runs(tmp_path):
+    with pytest.raises(ValueError, match="evaluation-only"):
+        small_config(tmp_path, checkpoint={"run": "x", "label": "frac-1"})  # it keeps its train section
