@@ -185,3 +185,29 @@ def test_one_depth_per_task_gives_three_starts_from_the_all_depths_set():
     assert len(set(round(x, 2) for x in picked)) > 3  # the depth varies across tasks
     with pytest.raises(ValueError):
         starts(compile_toy(toys()[0])[0], seed=0, per_task="two")
+
+
+def test_the_no_history_condition_hides_the_prefix_from_chronological_prompts(fmt):
+    from qet.core.render import render_messages
+
+    toy = next(t for t in toys() if len(starts(compile_toy(t)[0], seed=0)) > 1)
+    record, _ = compile_toy(toy)
+    rows = {}
+    for history in ("full", "none"):
+        out = []
+        policy = ScriptedPolicy(fmt, ["not an action"] * 200)
+        evaluate_resume([record], {toy.task_id: toy}, ToyEnv, policy, fmt, decoding="greedy",
+                        renderer="chronological", truncation=None, run_seed=0, on_episode=out.append,
+                        history=history)  # fmt: skip
+        rows[history] = out
+    blank = fmt.prompt_ids(render_messages(toy.public(), [], toy.contracts, "chronological"))
+    from qet.infer.agent import prompt_sha256
+
+    for full, none in zip(rows["full"], rows["none"], strict=True):
+        assert none["history"] == "none" and full["history"] == "full" and none["prefix"] == full["prefix"]
+        assert none["steps"][0]["prompt_sha256"] == prompt_sha256(blank)  # the agent sees no executed call
+        if full["depth"] > 0:
+            assert full["steps"][0]["prompt_sha256"] != prompt_sha256(blank)
+    with pytest.raises(ValueError):
+        evaluate_resume([record], {toy.task_id: toy}, ToyEnv, policy, fmt, decoding="greedy", renderer="quotient",
+                        truncation=None, run_seed=0, on_episode=out.append, history="partial")  # fmt: skip

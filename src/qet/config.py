@@ -82,6 +82,8 @@ class EvalSettings:
     backend: str = "hf"  # "hf": one sequence at a time; "vllm": batched (D-026b), evaluation-only runs
     batch_episodes: int = 256  # vllm: episodes decoded per round
     resume_starts: str = "all_depths"  # Resume@prefix: every depth with both conditions, or "one_depth" per task
+    resume_history: str = "full"  # "none": the no-history condition for chronological baselines (EVAL_PLAN §6.5)
+    standard: bool = True  # False: Resume@prefix only (a no-history run would repeat the standard episodes)
 
 
 @dataclass(frozen=True)
@@ -179,7 +181,16 @@ def load_config(path: str | Path) -> RunConfig:
                 raise ValueError("train.format_check: tasks and states_per_task must be positive")
 
     e = data["eval"]
-    optional = {"max_new_tokens", "resume_prefix_tasks", "eval_seed", "backend", "batch_episodes", "resume_starts"}
+    optional = {
+        "max_new_tokens",
+        "resume_prefix_tasks",
+        "eval_seed",
+        "backend",
+        "batch_episodes",
+        "resume_starts",
+        "resume_history",
+        "standard",
+    }
     _check_keys("eval", e, {"decoding"}, optional)
     decoding = tuple(dict(x) for x in e["decoding"])
     if not decoding:
@@ -195,11 +206,21 @@ def load_config(path: str | Path) -> RunConfig:
             raise ValueError("decoding needs temperature > 0 and 0 < top_p <= 1")
     eval_cfg = EvalSettings(decoding, int(e.get("max_new_tokens", 128)), int(e.get("resume_prefix_tasks", 0)),
                             int(e.get("eval_seed", 0)), str(e.get("backend", "hf")),
-                            int(e.get("batch_episodes", 256)), str(e.get("resume_starts", "all_depths")))  # fmt: skip
+                            int(e.get("batch_episodes", 256)), str(e.get("resume_starts", "all_depths")),
+                            str(e.get("resume_history", "full")), bool(e.get("standard", True)))  # fmt: skip
     if eval_cfg.backend not in ("hf", "vllm") or eval_cfg.batch_episodes < 1:
         raise ValueError("eval: backend is hf or vllm, and batch_episodes is positive")
     if eval_cfg.resume_starts not in ("all_depths", "one_depth"):
         raise ValueError("eval.resume_starts is all_depths or one_depth")
+    if eval_cfg.resume_history not in ("full", "none"):
+        raise ValueError("eval.resume_history is full or none")
+    if eval_cfg.resume_history == "none" and METHODS[str(data["configuration"])].renderer not in (
+        "chronological",
+        "native_multiturn",
+    ):
+        raise ValueError("the no-history condition is for chronological baselines (EVAL_PLAN §6.5)")
+    if not eval_cfg.standard and not eval_cfg.resume_prefix_tasks:
+        raise ValueError("eval.standard false leaves nothing to evaluate without resume_prefix_tasks")
     if eval_cfg.backend == "vllm" and train is not None:
         raise ValueError("eval.backend vllm is for evaluation-only runs (no train section)")
     if train is not None and train.warmup_only and eval_cfg.resume_prefix_tasks:

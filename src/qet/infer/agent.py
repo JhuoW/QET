@@ -100,14 +100,17 @@ class EpisodeState:
         budget: int | None = None,
         rollout: int = 0,
         run_seed: int = 0,
+        show_prefix: bool = True,
     ):
+        """`show_prefix=False` is Resume@prefix's no-history condition for chronological baselines (EVAL_PLAN §6.5):
+        the environment has executed the prefix, but the prompt starts without those calls."""
         self.env, self.fmt, self.renderer, self.truncation = env, fmt, renderer, truncation
         self.rollout, self.run_seed = rollout, run_seed
         self.x = env.task()
         self.contracts = env.contracts()
         self.tool_names = [t["name"] for t in self.x["tools"]]
         self.finish = self.x.get("finish", "finish")
-        self.history = [dict(s) for s in prefix]
+        self.history = [dict(s) for s in prefix] if show_prefix else []
         self.budget = max(0, env.step_budget() - len(prefix)) if budget is None else budget
         if self.budget < 0:
             raise ValueError(f"the step budget must be >= 0, got {self.budget}")

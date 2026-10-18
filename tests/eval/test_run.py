@@ -452,3 +452,13 @@ def test_dry_runs_sharing_prompts_plan_the_same(monkeypatch):
     cache = runner.DryRunCache()
     shared = [runner.plan(c, limit=6, cache=cache) for c in cfgs]
     assert shared == alone and len(cache.prompts) == 1 and next(iter(cache.prompts.values()))
+
+
+def test_the_no_history_condition_is_for_chronological_baselines(tmp_path):
+    ev = {"decoding": [{"mode": "greedy"}], "resume_prefix_tasks": 2, "resume_history": "none", "standard": False}
+    with pytest.raises(ValueError, match="chronological"):
+        small_config(tmp_path, train=None, eval=ev)  # the smoke config is configuration 6
+    cfg = small_config(tmp_path, train=None, configuration="1", eval=ev)
+    assert (cfg.eval.resume_history, cfg.eval.standard) == ("none", False)
+    with pytest.raises(ValueError, match="nothing to evaluate"):
+        small_config(tmp_path, train=None, configuration="1", eval={**ev, "resume_prefix_tasks": 0})

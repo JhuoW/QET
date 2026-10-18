@@ -151,7 +151,8 @@ def plan(cfg: RunConfig, *, limit: int | None = None, cache: DryRunCache | None 
         per_state = sum(sum(v[0]) / len(v[0]) for v in checked) / max(1, len(checked)) + cfg.eval.max_new_tokens
         eval_tokens = round(len(fc["at"]) * len(checked) * int(fc.get("states_per_task", 2)) * per_state)
         out["eval"] = {"episodes": 0, "format_checks": len(fc["at"]), "tokens_estimate": eval_tokens}
-    for _, _, rollouts in decoding_settings(cfg.eval) if not (cfg.train and cfg.train.warmup_only) else ():
+    skip = (cfg.train and cfg.train.warmup_only) or not cfg.eval.standard
+    for _, _, rollouts in decoding_settings(cfg.eval) if not skip else ():
         episodes += rollouts * len(per_task)
         eval_tokens += rollouts * sum(v[1] for v in per_task.values())
     for rec in ds.test_records[: cfg.eval.resume_prefix_tasks]:
@@ -534,7 +535,8 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory, parent=None
             policy_for = lambda d: HFSampler(model, fmt.eot_id, d)  # noqa: E731
         common = {"renderer": m.renderer, "truncation": cfg.data.truncation, "run_seed": cfg.seed, "on_episode": keep,
                   "width": cfg.eval.batch_episodes}  # fmt: skip
-        evaluate_tasks(ds.test_tasks, ds.make_env, policy_for, fmt, cfg.eval, **common)
+        if cfg.eval.standard:
+            evaluate_tasks(ds.test_tasks, ds.make_env, policy_for, fmt, cfg.eval, **common)
         if cfg.eval.resume_prefix_tasks:
             settings = decoding_settings(cfg.eval)
             name, dcfg, _ = next(
@@ -543,7 +545,7 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory, parent=None
             by_id = {task.task_id: task for task in ds.test_tasks}
             evaluate_resume(ds.test_records[: cfg.eval.resume_prefix_tasks], by_id, ds.make_env, policy_for(dcfg),
                             fmt, decoding=name, start_seed=cfg.eval.eval_seed,
-                            start_mode=cfg.eval.resume_starts, **common)  # fmt: skip
+                            start_mode=cfg.eval.resume_starts, history=cfg.eval.resume_history, **common)  # fmt: skip
     finally:
         for f in files.values():
             f.close()
