@@ -1,12 +1,13 @@
 """Submit a list of jobs as PBS dependency chains, so that at most N GPUs are in use at once (D-034, N = 2):
 
-    python scripts/pbs/chains.py PLAN [--chains 2] [--dry]
+    python scripts/pbs/chains.py PLAN [--chains 2] [--after-chains JOB,JOB] [--dry]
 
 PLAN is a committed text file, one job per line (blank lines and # comments skipped):
     config <configs/...yaml> <HH:MM:SS>         python -m qet.run on one config
     batch  <configs/.../batch.txt> <HH:MM:SS>   several configs in one job (an evaluation batch, vLLM environment)
 Line i goes to chain i mod N; each job waits for the previous job of its chain (depend=afterany: a chain goes on past
-a failed job). Every submission goes through scripts/pbs/submit.sh (pinned checkout, the GPU guard). Writes
+a failed job). --after-chains continues running chains: chain i's first job waits for the i-th given job. Every
+submission goes through scripts/pbs/submit.sh (pinned checkout, the GPU guard). Writes
 logs/pbs/chains-<stamp>.json with the plan and the job ids. --dry prints the submissions without making them.
 """
 
@@ -52,10 +53,16 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("plan", type=Path)
     parser.add_argument("--chains", type=int, default=2)
+    parser.add_argument("--after-chains", help="comma-separated job ids, the tails of the chains to continue")
     parser.add_argument("--dry", action="store_true")
     args = parser.parse_args(argv)
     jobs = parse(args.plan if args.plan.is_absolute() else REPO / args.plan)
     last: list[str | None] = [None] * args.chains
+    if args.after_chains:
+        tails = args.after_chains.split(",")
+        if len(tails) != args.chains:
+            raise SystemExit(f"--after-chains needs {args.chains} job ids")
+        last = list(tails)
     submitted = []
     for i, (kind, path, walltime) in enumerate(jobs):
         chain = i % args.chains

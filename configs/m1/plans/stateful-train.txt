@@ -1,0 +1,7 @@
+# M1.7 stateful extension training (D-033c: configurations 2 and 6, seeds 0-2, B = 25M), continuing the two chains
+config configs/m1/train-c6-qwen7b-stateful-s0.yaml 03:00:00
+config configs/m1/train-c2-qwen7b-stateful-s0.yaml 03:00:00
+config configs/m1/train-c6-qwen7b-stateful-s1.yaml 03:00:00
+config configs/m1/train-c2-qwen7b-stateful-s1.yaml 03:00:00
+config configs/m1/train-c6-qwen7b-stateful-s2.yaml 03:00:00
+config configs/m1/train-c2-qwen7b-stateful-s2.yaml 03:00:00
