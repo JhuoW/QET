@@ -94,6 +94,14 @@ lr ∈ {5e-5, 1e-4, 2e-4}). Revisit at Gate A with throughput numbers.
 Before each configuration, a fixed number of demo-order SFT steps in that configuration's own renderer
 (configurations 2–6 share one warm-up checkpoint per backbone and seed). Warm-up tokens count toward the budget.
 Default length: until format errors on dev fall below 1%, measured once in the pilot, then fixed for all.
+Update 2026-10-18 (M1.5): measured by results/raw/M1-warmup-measure-qwen7b-s0-20261018T032752Z
+(configs/m1/warmup-measure.yaml, commit f506d83, job 88092.gaas, 0.529 GPU-hours): demo-order SFT in the quotient
+renderer on Qwen2.5-7B-Instruct, seed 0, batch 4 graphs, with the format-error rate (invalid actions at single steps,
+greedy, max_new_tokens 512) on 200 dev states (100 dev tasks spread over the grid, the empty state and one random
+demo-order prefix each) checked at steps 0, 5, 10, 15, 20, 30 and 40: 5, 0, 2, 0, 0, 0 and 0 errors (2.5%, 0%, 1.0%,
+then 0%). The rule fixed before the run, the first checked step with a rate below 1%, gives a warm-up length of 5 steps
+for every warm-up run; the 1.0% at step 10 is 2 errors of 200, within that sample's noise, and the rule is not changed
+after the fact.
 
 ### D-011 Sampled-order marginalization ablation
 a3: from the root only, the demo order plus K−1 random topological orders (default K = 4), deduplicated; the

@@ -46,17 +46,49 @@ def warmup_method(cfg: RunConfig):
 
 
 # ----------------------------------------------------------------------------- the plan (dry run)
-def plan(cfg: RunConfig, *, limit: int | None = None) -> dict[str, Any]:
+class DryRunCache:
+    """What the dry runs of several configs share in one process: datasets, chat formats, and rendered prompts and
+    targets. A prompt depends only on the task, the state, the renderer, the truncation, the contracts and the
+    tokenizer (SPEC §5.6), and a target only on the action and the tokenizer, so pack builders that agree on those
+    share them (the builders' own caches, swapped for shared ones)."""
+
+    def __init__(self) -> None:
+        self.datasets: dict[str, Any] = {}
+        self.formats: dict[str, Any] = {}
+        self.prompts: dict[tuple, dict] = {}
+        self.targets: dict[str, dict] = {}
+
+    def dataset(self, data: Any, limit: int | None) -> Any:
+        from qet.datasets import build_dataset
+
+        key = repr((data, limit))
+        if key not in self.datasets:
+            self.datasets[key] = build_dataset(data, limit=limit)
+        return self.datasets[key]
+
+    def format(self, model_id: str) -> Any:
+        from qet.train.chat import ChatFormat
+
+        if model_id not in self.formats:
+            self.formats[model_id] = ChatFormat.load(model_id)
+        return self.formats[model_id]
+
+    def share(self, builder: Any, cfg: RunConfig, renderer: str) -> None:
+        key = (cfg.backbone, renderer, json.dumps(cfg.data.truncation, sort_keys=True), repr(cfg.data))
+        builder._prompts = self.prompts.setdefault(key, {})
+        builder._targets = self.targets.setdefault(cfg.backbone + repr(cfg.data), {})
+
+
+def plan(cfg: RunConfig, *, limit: int | None = None, cache: DryRunCache | None = None) -> dict[str, Any]:
     """What the run would do and cost, from the real data and prompts; nothing is written."""
     from qet.core.render import render_messages
-    from qet.datasets import build_dataset
     from qet.eval.resume_prefix import starts
     from qet.eval.runner import decoding_settings
-    from qet.train.chat import ChatFormat
     from qet.train.trainer import PackBuilder, pass1_edges
 
-    ds = build_dataset(cfg.data, limit=limit)
-    fmt = ChatFormat.load(cfg.backbone)
+    cache = cache or DryRunCache()
+    ds = cache.dataset(cfg.data, limit)
+    fmt = cache.format(cfg.backbone)
     m = cfg.method
     out: dict[str, Any] = {
         "run": {"milestone": cfg.milestone, "name": cfg.name, "configuration": f"{m.config_id} ({m.name})",
@@ -70,6 +102,7 @@ def plan(cfg: RunConfig, *, limit: int | None = None) -> dict[str, Any]:
         def graph_tokens(method, with_pass1: bool) -> tuple[list[int], list[int], list[int]]:
             b = PackBuilder(fmt, ds.contracts, method, run_seed=cfg.seed, truncation=cfg.data.truncation, k=t.k,
                             s_max=t.s_max)  # fmt: skip
+            cache.share(b, cfg, method.renderer)
             packs = [b.build(r, 0) for r in ds.train_records]
             edges = [pass1_edges(pk, method) for pk in packs]  # the edges pass 2 can weight, too
             p2 = [sum(len(pk.pair(e)) for e in es) for pk, es in zip(packs, edges, strict=True)]
@@ -556,7 +589,8 @@ def _format_checker(cfg, ds, fmt, model, out: Path, checks: list) -> Callable[[i
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="python -m qet.run", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)  # fmt: skip
-    parser.add_argument("--config", required=True)
+    parser.add_argument("--config", required=True, action="append",
+                        help="a config; several only with --dry-run, which then shares rendered prompts")  # fmt: skip
     parser.add_argument("--dry-run", action="store_true", help="print the plan and estimates; write nothing")
     parser.add_argument("--limit", type=int, help="at most N training graphs and N test tasks (smoke checks)")
     dirty_help = "development only: a dirty tree, recorded in the manifest; never a reported run"
@@ -564,12 +598,16 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--runlog", type=Path, default=RUNLOG_PATH, help="the run log to append to (pinned jobs: the "
                         "main repository's docs/RUNLOG.md, D-025b)")  # fmt: skip
     args = parser.parse_args(argv)
-    cfg = load_config(args.config)
+    cfgs = [load_config(c) for c in args.config]
     if args.dry_run:
         os.environ.setdefault("HF_HUB_OFFLINE", "1")  # read the cache only
-        print(format_plan(plan(cfg, limit=args.limit)))
+        cache = DryRunCache()
+        for i, cfg in enumerate(cfgs):
+            print(("\n" if i else "") + format_plan(plan(cfg, limit=args.limit, cache=cache)), flush=True)
         return
-    print(run(cfg, limit=args.limit, allow_dirty=args.allow_dirty, runlog_path=args.runlog))
+    if len(cfgs) != 1:
+        raise SystemExit("a run takes one config (several only with --dry-run)")
+    print(run(cfgs[0], limit=args.limit, allow_dirty=args.allow_dirty, runlog_path=args.runlog))
 
 
 if __name__ == "__main__":

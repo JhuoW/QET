@@ -15,6 +15,7 @@ RUNLOG row. Runs in ~/venvs/qet-vllm (vLLM 0.11.0 over the base environment). En
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import sys
 import time
@@ -100,6 +101,7 @@ def main(argv: list[str] | None = None) -> Path:
     try:
         b = backbone(args.backbone)
         hf_rows, hf_s = hf_phase()
+        gc.collect()  # the Hugging Face model is unreachable now; free its memory before vLLM reserves its share
         torch.cuda.empty_cache()
         llm = make_llm(b.model_id, b.revision, lora=adapter is not None, seed=0)
         vl_rows, vl_s = episodes(agree_tasks, lambda d: VLLMSampler(llm, fmt.eot_id, d, adapter), greedy,

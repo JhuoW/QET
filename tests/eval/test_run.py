@@ -443,3 +443,12 @@ def test_the_vllm_backend_is_for_evaluation_only_runs(tmp_path):
     cfg = small_config(tmp_path, train=None, eval={"decoding": [{"mode": "greedy"}], "backend": "vllm",
                                                    "batch_episodes": 64})  # fmt: skip
     assert (cfg.eval.backend, cfg.eval.batch_episodes, cfg.train) == ("vllm", 64, None)
+
+
+def test_dry_runs_sharing_prompts_plan_the_same(monkeypatch):
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    cfgs = [load_config(SMOKE), load_config(REPO / "configs" / "smoke" / "sft.yaml")]
+    alone = [runner.plan(c, limit=6) for c in cfgs]
+    cache = runner.DryRunCache()
+    shared = [runner.plan(c, limit=6, cache=cache) for c in cfgs]
+    assert shared == alone and len(cache.prompts) == 1 and next(iter(cache.prompts.values()))
