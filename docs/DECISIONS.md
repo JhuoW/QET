@@ -508,6 +508,12 @@ projection (D-030a), counted in billed PBS walltime (resources_used.walltime), w
 in-process GPU-hours. (d) The epoch-0 pack prebuild stays (it fails fast on a graph that cannot be trained), although the
 dry runs already build every pack: about 3-6% of each run's GPU time; making it lazy is a trainer change left for later.
 Default: as described; cheap to reverse.
+Update 2026-10-18 (a, c): at the 25% checkpoints of train-c6-qwen7b-s0 and train-c2-qwen7b-s0 (objectives falling, peak
+memory 89.7 and 90.0 GiB) and after 44 steps of train-c2-llama8b-s0 (94.7 GiB), the measured step-time rates (11,090,
+7,441 and 6,855 tokens/s) and the time outside the logged steps (up to 14 minutes for lattice packs) project 137.8
+billed GPU-hours for the matrix, 108.5% of the Gate A projection of 127 and inside the 110% guard; the other 31 runs
+were submitted (22 Qwen runs and one Llama run first, the other 8 Llama runs once its rate was known). Engineering
+projection from the training logs, not a result.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.
