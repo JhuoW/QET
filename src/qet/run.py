@@ -142,6 +142,12 @@ def plan(cfg: RunConfig, *, limit: int | None = None, cache: DryRunCache | None 
     episodes = eval_tokens = 0
     task_x = {t.task_id: t.public() for t in ds.test_tasks}
     per_task = {}
+    if not ds.test_records:  # no compiled demonstrations (ToolHop): the empty-state prompt for every step
+        for task in ds.test_tasks:
+            first = len(fmt.prompt_ids(render_messages(task_x[task.task_id], [], ds.contracts, m.renderer,
+                                                       cfg.data.truncation)))  # fmt: skip
+            n = getattr(task, "chain", ds.make_env(task).step_budget())
+            per_task[task.task_id] = ([first] * (n + 1), first * (n + 1) + (n + 1) * cfg.eval.max_new_tokens)
     for rec in ds.test_records:  # prompt tokens along the demo path, one generation per step
         steps = rec.steps()
         prompts = [len(fmt.prompt_ids(render_messages(task_x[rec.task_id], steps[:k], ds.contracts, m.renderer,

@@ -48,6 +48,8 @@ def build_dataset(cfg: DataConfig, *, limit: int | None = None) -> Dataset:
         return funcbenchgen_dataset(cfg, limit=limit)
     if cfg.env == "stateful":
         return stateful_dataset(cfg, limit=limit)
+    if cfg.env == "toolhop":
+        return toolhop_dataset(cfg, limit=limit)
     if cfg.env != "toy":
         raise ValueError(f"unknown env {cfg.env!r}")
     n_train = cfg.train.count if limit is None else min(limit, cfg.train.count)
@@ -226,6 +228,22 @@ def inject_false_independence(records: Sequence[GraphRecord], rate: float, seed:
             rec = dataclasses.replace(rec, edges=tuple(e for e in rec.edges if e != drop))
         out.append(rec)
     return out
+
+
+def toolhop_dataset(cfg: DataConfig, *, limit: int | None = None) -> Dataset:
+    """ToolHop, evaluation only (EVAL_PLAN §3.2, D-035): the pinned queries in the mandatory tool-use setting."""
+    from qet.envs.toolhop import DATA, DATA_SHA256, DATASET_COMMIT, ToolHopEnv, load_tasks
+
+    n_test = cfg.test.count if limit is None else min(limit, cfg.test.count)
+    tasks = load_tasks()[cfg.test.start : cfg.test.start + n_test]
+    tools = sorted({t["name"] for task in tasks for t in task.tools} - {"finish"})
+    spec = {"env": "toolhop", "data": str(DATA.relative_to(DATA.parents[3])), "sha256": DATA_SHA256,
+            "test": {"start": cfg.test.start, "count": n_test}, "truncation": cfg.truncation}  # fmt: skip
+    benchmark = {"name": "toolhop", "dataset": "bytedance-research/ToolHop", "commit": DATASET_COMMIT,
+                 "code": "src/qet/envs/toolhop.py", "evaluator": "the official answer check (code/evaluation_open.py)",
+                 "step_budget": "9 turns: 8 tool calls and the answer (the official max_turns)"}  # fmt: skip
+    contracts = {name: {"reads": [], "writes": []} for name in tools}
+    return Dataset([], tasks, [], contracts, ToolHopEnv.contract_source, ToolHopEnv, spec, benchmark)
 
 
 def stateful_dataset(cfg: DataConfig, *, limit: int | None = None) -> Dataset:

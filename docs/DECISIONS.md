@@ -40,6 +40,7 @@ supersede it with a new one. Changes to SPEC.md, EVAL_PLAN.md or reference/ need
 | D-032 | Accepted | M1.7 evaluation plan (the human, 2026-10-18) |
 | D-033 | Proposed | Design of the M1.7 training extras: data curve and false-independence ablation |
 | D-034 | Accepted | At most 2 GPUs at once (the human, 2026-10-18) |
+| D-035 | Proposed | ToolHop adapter (evaluation only) |
 
 ### D-001 Action string: tool first
 The method page defines the canonical call string by sorting all JSON keys, which puts `args` before `tool`
@@ -558,6 +559,23 @@ jobs finish, and from then on at most 2 jobs run or wait in the queue at once: `
 submission beyond that (QET_MAX_GPUS, default 2), and longer lists run as two PBS dependency chains (`--after JOB`,
 depend=afterany), whose held jobs use no GPU. The limit changes the rate, not the total GPU-hours of a plan; reports
 give both. This replaces D-031(a)'s submission of the 31 runs together for all later work.
+
+### D-035 ToolHop adapter (evaluation only)
+`src/qet/envs/toolhop.py`, `scripts/fetch_toolhop.py` (in `make fetch`). The data is bytedance-research/ToolHop
+(Apache-2.0, not gated; the human chose ToolHop in D-032c) at dataset commit b439d72, data/ToolHop.json pinned by sha256
+0a51f71a…; 995 queries, 3,912 tools. (a) Setting: the official evaluator's mandatory tool use (EVAL_PLAN §3.2), queries
+untouched; the request is the official instruction text minus its "<answer>" line, since the answer goes into our finish
+action. (b) At most 9 turns (the official max_turns): 8 tool calls, then the answer; one call per turn, where the
+official loop allows several per turn. (c) Our renderer shows a tool's parameter names and one description, so each
+parameter's type, requiredness, enum and default are folded into the tool description, in schema order. (d) A call runs
+as the official excute_func does: exec of the source whose first def name matches, with the evaluator's module globals
+(json, os, datetime, sha256, argparse) and a separate locals scope (so a source's own module-level imports and helpers
+stay invisible to its function, as there), then the call, with the official 10 s limit and error wording. It runs in a
+sandbox worker (its own working directory, an 8 GB memory limit, printing kept off its reply channel): two tools exec or
+eval strings from the model's arguments, and two append to error_log.txt. (e) Success is the official check on the
+finish answer and the last tool output, with a literal-and-arithmetic evaluator in place of eval, so model text is never
+executed. (f) The tools' modules dicttoxml, holidays and roman were added to the vLLM venv only. Evaluated for the base
+model and configurations 2 and 6 on Qwen, greedy and 8 samples. Default: as described; cheap to reverse.
 
 ## Open questions for the human
 - [ ] Q1 Confirm D-001 (tool first) or choose the method page's literal key order.

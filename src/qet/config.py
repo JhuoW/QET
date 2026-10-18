@@ -19,7 +19,7 @@ from qet.train.chat import BACKBONES
 from qet.train.methods import METHODS
 
 DTYPES = ("bfloat16", "float32")
-ENVS = ("toy", "funcbenchgen", "stateful")
+ENVS = ("toy", "funcbenchgen", "stateful", "toolhop")
 
 
 def _check_keys(section: str, data: dict[str, Any], required: set[str], optional: set[str]) -> None:
@@ -143,6 +143,9 @@ def load_config(path: str | Path) -> RunConfig:
         _check_keys("data.source", source or {}, {"compile_run", "train", "eval"}, set())
         if source["eval"] == source["train"] or source["eval"].startswith("train"):
             raise ValueError("a run never evaluates on its training split")
+    elif d["env"] == "toolhop":
+        if source is not None or b.count < 1 or a.count:
+            raise ValueError("toolhop is evaluation only: test tasks, no training split, no source (D-035)")
     elif source is not None:
         raise ValueError("data.source is for funcbenchgen and stateful runs")
     elif a.start < b.start + b.count and b.start < a.start + a.count:

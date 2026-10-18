@@ -13,6 +13,7 @@ setup:
 # account with access to the gated Llama repositories; run once, on the login node.
 fetch:
 	$(PYTHON) scripts/fetch_models.py --weights Qwen/Qwen2.5-0.5B-Instruct
+	$(PYTHON) scripts/fetch_toolhop.py
 
 lint:
 	$(PYTHON) -m ruff check .
