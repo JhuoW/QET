@@ -28,6 +28,8 @@ from qet.manifest import REPO, Manifest, git_state, hardware, is_committed, libr
 RESULTS = REPO / "results" / "raw"
 CHECKPOINTS = REPO / "checkpoints"
 RUNLOG_PATH = REPO / "docs" / "RUNLOG.md"
+_ENGINES: dict[tuple[str, str], Any] = {}  # vLLM engines shared by the evaluation runs of one process (one job)
+_LORA_IDS: dict[str, int] = {}  # one id per adapter path: an engine caches adapters by id
 
 
 def _rel(path: str | Path) -> str:
@@ -524,13 +526,18 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory, parent=None
             from qet.train.chat import backbone
 
             b = backbone(cfg.backbone)
+            fresh = (b.model_id, b.revision) not in _ENGINES
+            if fresh:  # LoRA on, so base-model and checkpoint evaluations share it; seeds are per step anyway
+                _ENGINES[(b.model_id, b.revision)] = make_llm(b.model_id, b.revision, lora=True, seed=0)
+            tokens["vllm_engine"] = "new" if fresh else "shared with an earlier run of this job"
             lora = None
             if evaluated is not None:
                 lora = str(
                     Path(evaluated["path"]) if Path(evaluated["path"]).is_absolute() else REPO / evaluated["path"]
                 )
-            llm = make_llm(b.model_id, b.revision, lora=lora is not None, seed=cfg.seed)
-            policy_for = lambda d: VLLMSampler(llm, fmt.eot_id, d, lora)  # noqa: E731
+            llm = _ENGINES[(b.model_id, b.revision)]
+            lora_id = _LORA_IDS.setdefault(lora, len(_LORA_IDS) + 1) if lora else 1
+            policy_for = lambda d: VLLMSampler(llm, fmt.eot_id, d, lora, lora_id)  # noqa: E731
         else:
             policy_for = lambda d: HFSampler(model, fmt.eot_id, d)  # noqa: E731
         common = {"renderer": m.renderer, "truncation": cfg.data.truncation, "run_seed": cfg.seed, "on_episode": keep,
@@ -594,7 +601,8 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="python -m qet.run", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)  # fmt: skip
     parser.add_argument("--config", required=True, action="append",
-                        help="a config; several only with --dry-run, which then shares rendered prompts")  # fmt: skip
+                        help="a config; several run one after another (a dry run then shares rendered prompts, "
+                        "evaluation runs a vLLM engine)")  # fmt: skip
     parser.add_argument("--dry-run", action="store_true", help="print the plan and estimates; write nothing")
     parser.add_argument("--limit", type=int, help="at most N training graphs and N test tasks (smoke checks)")
     dirty_help = "development only: a dirty tree, recorded in the manifest; never a reported run"
@@ -609,9 +617,15 @@ def main(argv: list[str] | None = None) -> None:
         for i, cfg in enumerate(cfgs):
             print(("\n" if i else "") + format_plan(plan(cfg, limit=args.limit, cache=cache)), flush=True)
         return
-    if len(cfgs) != 1:
-        raise SystemExit("a run takes one config (several only with --dry-run)")
-    print(run(cfgs[0], limit=args.limit, allow_dirty=args.allow_dirty, runlog_path=args.runlog))
+    failed = []
+    for cfg in cfgs:  # several configs run one after another in this process (evaluation batches share vLLM)
+        try:
+            print(run(cfg, limit=args.limit, allow_dirty=args.allow_dirty, runlog_path=args.runlog), flush=True)
+        except Exception as e:  # recorded in that run's manifest; the batch goes on (a scheduler's stop does not)
+            failed.append(cfg.path)
+            print(f"{cfg.path} failed: {type(e).__name__}: {e}", flush=True)
+    if failed:
+        raise SystemExit(f"{len(failed)} of {len(cfgs)} runs failed: {failed}")
 
 
 if __name__ == "__main__":

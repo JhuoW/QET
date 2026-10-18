@@ -33,13 +33,14 @@ def make_llm(model_id: str, revision: str, *, lora: bool, max_model_len: int = 3
 class VLLMSampler:
     """`generate_batch` decodes one action for each prompt; `generate` is the batch of one."""
 
-    def __init__(self, llm: Any, eot_id: int, decode: DecodeConfig, lora_path: str | None = None):
+    def __init__(self, llm: Any, eot_id: int, decode: DecodeConfig, lora_path: str | None = None, lora_id: int = 1):
+        """`lora_id` must differ between adapters that share an engine: vLLM caches an adapter by its id."""
         self.llm, self.eot_id, self.decode = llm, eot_id, decode
         self.lora = None
         if lora_path:
             from vllm.lora.request import LoRARequest
 
-            self.lora = LoRARequest("checkpoint", 1, lora_path)
+            self.lora = LoRARequest(f"checkpoint-{lora_id}", lora_id, lora_path)
 
     def params(self, seed: int) -> Any:
         from vllm import SamplingParams
