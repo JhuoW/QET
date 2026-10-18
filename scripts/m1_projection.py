@@ -7,9 +7,10 @@ gradient tokens per logged step-second) and the progress (the training log, or a
 the first two runs buffer their logs); PBS gives the billed walltime so far (`qstat -xf`, resources_used.walltime).
 A run's projection is its billed time so far plus (B - tokens used) / rate plus 60 s to save and close; a finished run
 counts its billed time. The M1.5 warm-up runs (the batch approval covers them) and their failed attempts are added at
-their billed time, the warm-up length measurement included. The total is compared with the Gate A projection read
-from docs/reports/gate-A.md (the 125M row) and with the 110% guard. Engineering projection, not a result. Writes
-nothing.
+their billed time, the warm-up length measurement included. The extras (D-033: data curve, false independence,
+stateful) and their warm-ups have their own approvals and are left out. The total is compared with the Gate A
+projection read from docs/reports/gate-A.md (the 125M row) and with the 110% guard. Engineering projection, not a
+result. Writes nothing.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 RAW = REPO / "results" / "raw"
+MATRIX = re.compile(r"[a-z0-9]+-[a-z0-9]+-s\d+")  # <configuration>-<backbone>-s<seed>; extras add a variant
+WARMUP = re.compile(r"M1-warmup-[a-z]+-[a-z0-9]+-s\d+-\d{8}T\d{6}Z")  # likewise for the warm-up runs
 
 
 def billed_hours(job: str) -> float | None:
@@ -44,6 +47,8 @@ def main() -> None:
     rows, total = [], 0.0
     for cfg in sorted((REPO / "configs" / "m1").glob("train-*.yaml")):
         name = cfg.stem.removeprefix("train-")  # e.g. c6-qwen7b-s0 -> runs M1-c6-qwen7b-s0-<stamp>
+        if not MATRIX.fullmatch(name):
+            continue
         runs = sorted(RAW.glob(f"M1-{name}-2026*"))
         if not runs:
             rows.append((name, "not started", None))
@@ -67,6 +72,8 @@ def main() -> None:
         rows.append((name, f"{man['status']}, {tok / sec if sec else 0:,.0f} tokens/s", hours))
     warm = 0.0
     for man_path in sorted(RAW.glob("M1-warmup-*/manifest.json")):  # the length measurement and failed attempts too
+        if not WARMUP.fullmatch(man_path.parent.name):
+            continue
         man = json.loads(man_path.read_text())
         warm += billed_hours(man["hardware"]["scheduler_job"]) or man.get("gpu_hours") or 0.0
     for name, state, hours in rows:
