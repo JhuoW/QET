@@ -168,3 +168,20 @@ def test_batched_evaluation_writes_the_same_rows(fmt):
         rows[kind] = out
     assert rows["batch"] == rows["one"] and len(rows["one"]) > 4 * len(tasks)
     assert {r["end"] for r in rows["one"]} >= {"finish", "invalid_action"}  # off-path starts leave the demo path
+
+
+def test_one_depth_per_task_gives_three_starts_from_the_all_depths_set():
+    picked = []
+    for toy in toys():
+        record, _ = compile_toy(toy)
+        every = starts(record, seed=0)
+        one = starts(record, seed=0, per_task="one_depth")
+        assert one == starts(record, seed=0, per_task="one_depth")  # fixed by the evaluation seed
+        assert one[0] == every[0] and set(one[1:]) <= set(every[1:])
+        assert len(one) == (3 if len(every) > 1 else 1)
+        if len(one) == 3:
+            assert [s.condition for s in one] == ["empty", "on_path", "off_path"] and one[1].depth == one[2].depth
+            picked.append(one[1].depth / record.n)
+    assert len(set(round(x, 2) for x in picked)) > 3  # the depth varies across tasks
+    with pytest.raises(ValueError):
+        starts(compile_toy(toys()[0])[0], seed=0, per_task="two")

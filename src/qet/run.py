@@ -156,7 +156,7 @@ def plan(cfg: RunConfig, *, limit: int | None = None, cache: DryRunCache | None 
         eval_tokens += rollouts * sum(v[1] for v in per_task.values())
     for rec in ds.test_records[: cfg.eval.resume_prefix_tasks]:
         prompts, _ = per_task[rec.task_id]
-        for s in starts(rec, cfg.eval.eval_seed):  # the same starts the run evaluates
+        for s in starts(rec, cfg.eval.eval_seed, per_task=cfg.eval.resume_starts):  # the same starts the run evaluates
             episodes += 1
             eval_tokens += sum(prompts[s.depth :]) + (rec.n + 1 - s.depth) * cfg.eval.max_new_tokens
     out.setdefault("eval", {"episodes": episodes, "tokens_estimate": eval_tokens})
@@ -317,7 +317,7 @@ def run(
     evaluated = checkpoint_record(cfg)
     resume = [{"task_id": rec.task_id, "condition": s.condition, "depth": s.depth, "order": list(s.order)}
               for rec in ds.test_records[: cfg.eval.resume_prefix_tasks]
-              for s in starts(rec, cfg.eval.eval_seed)]  # fmt: skip
+              for s in starts(rec, cfg.eval.eval_seed, per_task=cfg.eval.resume_starts)]  # fmt: skip
     created = utc_now()
     run_id = f"{cfg.milestone}-{cfg.name}-s{cfg.seed}-{created:%Y%m%dT%H%M%SZ}"
     out = Path(results_root) / run_id
@@ -542,7 +542,8 @@ def _execute(cfg, ds, fmt, out: Path, ckpt_dir: Path, model_factory, parent=None
             )  # greedy when there is one
             by_id = {task.task_id: task for task in ds.test_tasks}
             evaluate_resume(ds.test_records[: cfg.eval.resume_prefix_tasks], by_id, ds.make_env, policy_for(dcfg),
-                            fmt, decoding=name, start_seed=cfg.eval.eval_seed, **common)  # fmt: skip
+                            fmt, decoding=name, start_seed=cfg.eval.eval_seed,
+                            start_mode=cfg.eval.resume_starts, **common)  # fmt: skip
     finally:
         for f in files.values():
             f.close()
