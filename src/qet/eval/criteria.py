@@ -30,6 +30,20 @@ class EvalRun:
     greedy: dict[str, bool] = field(default_factory=dict)  # task -> greedy success
     samples: dict[str, list[bool]] = field(default_factory=dict)  # task -> sampled successes
     resume: list[dict[str, Any]] = field(default_factory=list)  # Resume@prefix rows
+    variant: str = ""  # "" for the main matrix; n1250, n2500, fi, stateful (D-033); "base" for a base model
+    episodes: dict[str, int] = field(default_factory=dict)  # prediction file -> rows
+
+
+def variant_of(training_run_id: str | None) -> str:
+    """M1-<tag>-<backbone>[-<variant>]-s<seed>-<stamp> -> the variant ("" for the main matrix; k2/k4/k8 for a4)."""
+    if training_run_id is None:
+        return "base"
+    parts = training_run_id.split("-")
+    seed_at = max(i for i, p in enumerate(parts) if p.startswith("s") and p[1:].isdigit())
+    variant = "-".join(parts[3:seed_at])
+    if parts[1].startswith("a4k"):  # a4 with K = 2, 4, 8 share configuration a4 and seed 0: K tells them apart
+        variant = "-".join(x for x in (parts[1][2:], variant) if x)
+    return variant
 
 
 def load_runs(paths: Iterable[Path]) -> list[EvalRun]:
@@ -43,9 +57,11 @@ def load_runs(paths: Iterable[Path]) -> list[EvalRun]:
         split = (spec.get("eval") or {}).get("split") or spec.get("env")
         ck = m.get("evaluated_checkpoint")
         run = EvalRun(m["run_id"], m["configuration"]["id"], m["backbone"]["id"], m["seed"], split,
-                      ck["label"] if ck else None)  # fmt: skip
+                      ck["label"] if ck else None, variant=variant_of(ck["run_id"] if ck else None))  # fmt: skip
         for f in sorted((folder / "predictions").glob("*.jsonl")):
-            for line in f.read_text(encoding="utf-8").splitlines():
+            lines = f.read_text(encoding="utf-8").splitlines()
+            run.episodes[f.stem] = len(lines)
+            for line in lines:
                 r = json.loads(line)
                 if r["condition"] != "standard":
                     run.resume.append(r)
@@ -58,10 +74,11 @@ def load_runs(paths: Iterable[Path]) -> list[EvalRun]:
 
 
 def by_seed(runs: Iterable[EvalRun], configuration: str, backbone: str, split: str = "test",
-            label: str = "frac-1") -> dict[int, EvalRun]:  # fmt: skip
+            label: str | None = "frac-1", variant: str = "") -> dict[int, EvalRun]:  # fmt: skip
     out = {}
     for r in runs:
-        if (r.configuration, r.backbone, r.split, r.label) == (configuration, backbone, split, label):
+        if (r.configuration, r.backbone, r.split, r.label, r.variant) == (configuration, backbone, split, label,
+                                                                          variant):  # fmt: skip
             if r.seed in out:
                 raise ValueError(f"two evaluation runs of configuration {configuration}, seed {r.seed}: {r.run_id}")
             out[r.seed] = r

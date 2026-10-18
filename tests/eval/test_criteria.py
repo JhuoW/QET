@@ -64,7 +64,8 @@ def test_runs_load_from_their_folders_and_seeds_are_unique(tmp_path):
     (folder / "predictions").mkdir()
     (folder / "manifest.json").write_text(json.dumps({
         "run_id": "M1-eval-x", "status": "completed", "configuration": {"id": "6"}, "backbone": {"id": QWEN},
-        "seed": 1, "evaluated_checkpoint": {"label": "frac-1"}}))  # fmt: skip
+        "seed": 1,
+        "evaluated_checkpoint": {"label": "frac-1", "run_id": "M1-c6-qwen7b-s1-20261018T060956Z"}}))  # fmt: skip
     (folder / "data" / "data_manifest.json").write_text(json.dumps({"spec": {"eval": {"split": "test"}}}))
     rows = [{"task_id": "a", "decoding": "greedy", "condition": "standard", "success": True},
             {"task_id": "a", "decoding": "sample-t1-p1", "condition": "standard", "success": False},
@@ -74,3 +75,37 @@ def test_runs_load_from_their_folders_and_seeds_are_unique(tmp_path):
     assert run.greedy == {"a": True} and run.samples == {"a": [False]} and len(run.resume) == 1
     with pytest.raises(ValueError, match="two evaluation runs"):
         by_seed([run, run], "6", QWEN)
+
+
+def test_variants_keep_the_extras_apart_from_the_matrix():
+    from qet.eval.criteria import variant_of
+
+    assert variant_of("M1-c6-qwen7b-s0-20261018T045428Z") == ""
+    assert variant_of("M1-c6-qwen7b-n1250-s0-20261018T090000Z") == "n1250"
+    assert variant_of("M1-a4k2-qwen7b-s0-20261018T060959Z") == "k2" and variant_of(None) == "base"
+    main = EvalRun("m", "6", QWEN, 0, "test", "frac-1", {"t": True})
+    extra = EvalRun("e", "6", QWEN, 0, "test", "frac-1", {"t": False}, variant="fi")
+    assert by_seed([main, extra], "6", QWEN) == {0: main} and by_seed([main, extra], "6", QWEN, variant="fi") == {
+        0: extra
+    }
+
+
+def test_the_gate_b_report_quotes_the_criteria_and_computes_them():
+    import sys
+
+    from qet.manifest import REPO
+
+    sys.path.insert(0, str(REPO / "scripts"))
+    import gate_report
+
+    runs = runs_with({"1": 0.2, "2": 0.4, "3": 0.3, "4": 0.3, "5": 0.35, "6": 0.6})
+    for r in runs:
+        r.samples = {t: [r.greedy[t]] * 8 for t in TASKS}
+        if r.configuration in ("3", "5", "6"):
+            r.resume = resume_rows({"3": 0.3, "5": 0.3, "6": 0.05}[r.configuration], r.seed, r.configuration)
+    widths = {t: (5 if i % 2 else 2) for i, t in enumerate(TASKS)}
+    section = "## 9. Falsification criteria\nCommon terms: ...\n1. Greedy success on graphs of measured width >= 3: ..."
+    text = gate_report.gate_b(runs, widths, section, [("x", "0" * 64)], resamples=500)
+    assert section in text and "| 1 | 6 - 3 |" in text and "| 2 | 2 - 1 |" in text and "| 3 | gap 3 - gap 6 |" in text
+    assert "Criterion 1: the objective claim holds" in text and "Criterion 3: claim C4 holds" in text
+    assert "## 4. Resume@prefix" in text and "**STOP.**" in text and "does not carry" not in text

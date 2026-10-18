@@ -460,14 +460,221 @@ def gate_a(compile_run: Path, stats_run: Path, pilot_run: Path | None, src: Sour
     return "\n".join(out) + "\n"
 
 
+WIDTH_NAMES = ["1", "2", "3-4", "5+"]
+
+
+def bin_of(w: int) -> str:
+    return "1" if w == 1 else "2" if w == 2 else "3-4" if w <= 4 else "5+"
+
+
+def gate_b(runs: list, widths: dict[str, int], plan_section: str, sources: list[tuple[str, str]],
+           resamples: int = 10_000) -> str:  # fmt: skip
+    """The Gate B report (MILESTONES M1): each criterion of EVAL_PLAN §9 verbatim with its estimate, 95% interval and
+    verdict, then descriptive tables, all from the evaluation runs' saved predictions."""
+    from qet.eval.criteria import by_seed, criterion_1, criterion_2, criterion_3, gaps
+    from qet.eval.metrics import pass_k
+    from qet.eval.stats import cluster_bootstrap, task_means
+
+    qwen, llama = "Qwen/Qwen2.5-7B-Instruct", "meta-llama/Llama-3.1-8B-Instruct"
+    kw = {"resamples": resamples}
+    out = ["# Gate B report (M1: FuncBenchGen)", "",
+           f"From {len(runs)} completed evaluation runs (vLLM 0.11, D-026, D-032), recomputed from their saved "
+           "predictions; the test widths come from the frozen compile run. vLLM's greedy decoding is not repeatable "
+           "run "
+           "to run (D-032d): each number here is one evaluation, read from its saved predictions.", ""]  # fmt: skip
+
+    def interval(d: dict) -> str:
+        return f"{d['estimate']:+.3f} [{d['low']:+.3f}, {d['high']:+.3f}]"
+
+    out += ["## 1. Pre-registered criteria (EVAL_PLAN §9, verbatim)", "", plan_section.strip(), ""]
+    if "Common terms" not in plan_section:
+        out += ["**EVAL_PLAN §9 does not carry the wording accepted at Gate A (D-030e).** The numbers below follow "
+                "D-030e.", ""]  # fmt: skip
+    test_tasks = set(widths)
+    rows = []
+    try:
+        c1 = criterion_1(runs, widths, qwen, **kw)
+        rows += [
+            ("1", d["comparison"], interval(d), d["significant"], d["mcnemar_per_seed"]) for d in c1["differences"]
+        ]
+        verdict1 = f"the objective claim {c1['claim']} (pool of {c1['pool']} tasks of width >= 3)"
+    except ValueError as e:
+        verdict1 = f"inconclusive: {e}"
+    try:
+        c2 = criterion_2(runs, test_tasks, qwen, **kw)
+        rows += [
+            ("2", d["comparison"], interval(d), d["significant"], d["mcnemar_per_seed"]) for d in c2["differences"]
+        ]
+        verdict2 = c2["reading"]
+    except ValueError as e:
+        verdict2 = f"inconclusive: {e}"
+    try:
+        c3 = criterion_3(runs, qwen, **kw)
+        rows += [("3", d["comparison"], interval(d), d["significant"], {}) for d in c3["differences"]]
+        verdict3 = f"claim C4 {c3['claim']}"
+    except ValueError as e:
+        verdict3 = f"inconclusive: {e}"
+    out += ["| criterion | comparison | estimate [95% interval] | significant | McNemar p per seed |",
+            "| --- | --- | --- | --- | --- |"]  # fmt: skip
+    for crit, comp, iv, sig, mc in rows:
+        ps = ", ".join(f"s{k}: {v['p_value']:.3g}" for k, v in mc.items()) or "–"
+        out.append(f"| {crit} | {comp} | {iv} | {'yes' if sig else 'no'} | {ps} |")
+    out += ["", f"- Criterion 1: {verdict1}.", f"- Criterion 2: {verdict2}.", f"- Criterion 3: {verdict3}.",
+            "- Criteria 4-5: M2 (StableToolBench, AppWorld); not evaluated at this gate.", ""]  # fmt: skip
+
+    def success_row(rs: dict) -> tuple[str, str, str, str]:
+        tasks = sorted(set.intersection(*(set(r.greedy) for r in rs.values())))
+        g = cluster_bootstrap(task_means({t: [float(r.greedy[t]) for r in rs.values()] for t in tasks}), **kw)
+        samp = [sum(v) / len(v) for r in rs.values() for v in r.samples.values()]
+        p4 = [x for r in rs.values() for v in r.samples.values() if (x := pass_k(sum(v), len(v), 4)) is not None]
+        return (f"{g['estimate']:.3f} [{g['low']:.3f}, {g['high']:.3f}]",
+                f"{sum(samp) / len(samp):.3f}" if samp else "–", f"{sum(p4) / len(p4):.3f}" if p4 else "–",
+                str(len(tasks)))  # fmt: skip
+
+    out += ["## 2. Success on the frozen test set (checkpoint at 100% of B; base models untrained)", "",
+            "| backbone | configuration | seeds | greedy success [95% interval] | sampled success | pass^4 | tasks |",
+            "| --- | --- | --- | --- | --- | --- | --- |"]  # fmt: skip
+    configs = ["1", "2", "3", "4", "5", "6", "a1", "a2", "a3", "a4"]
+    for b in (qwen, llama):
+        base = {r.seed: r for r in runs if r.variant == "base" and r.backbone == b and r.split == "test"}
+        if base:
+            out.append(f"| {b.split('/')[1]} | base | {len(base)} | " + " | ".join(success_row(base)) + " |")
+        for c in configs:
+            rs = by_seed(runs, c, b)
+            if rs:
+                out.append(f"| {b.split('/')[1]} | {c} | {len(rs)} | " + " | ".join(success_row(rs)) + " |")
+    out += ["", "a4 runs (K = 2, 4, 8) share configuration a4 and seed 0, so their rows are listed in section 7.", ""]
+
+    out += ["## 3. Greedy success by measured width (Qwen, seeds averaged)", "",
+            "| configuration | " + " | ".join(f"width {w}" for w in WIDTH_NAMES) + " |",
+            "| --- | " + " | ".join("---" for _ in WIDTH_NAMES) + " |"]  # fmt: skip
+    for c in ("1", "2", "3", "4", "5", "6"):
+        rs = by_seed(runs, c, qwen)
+        if not rs:
+            continue
+        cells = []
+        for w in WIDTH_NAMES:
+            ts = [t for t, x in widths.items() if bin_of(x) == w and all(t in r.greedy for r in rs.values())]
+            v = [sum(r.greedy[t] for r in rs.values()) / len(rs) for t in ts]
+            cells.append(f"{sum(v) / len(v):.3f} (n={len(v)})" if v else "–")
+        out.append(f"| {c} | " + " | ".join(cells) + " |")
+    out.append("")
+
+    out += ["## 4. Resume@prefix (greedy, frozen starts at every depth; Qwen, seeds averaged)", "",
+            "| configuration | empty | on-path | off-path | off-path gap | tasks with off-path starts |",
+            "| --- | --- | --- | --- | --- | --- |"]  # fmt: skip
+    for c in ("1", "2", "3", "5", "6"):
+        rs = by_seed(runs, c, qwen)
+        if not rs or not any(r.resume for r in rs.values()):
+            continue
+        cond = {}
+        for k in ("empty", "on_path", "off_path"):
+            v = [float(x["success"]) for r in rs.values() for x in r.resume
+                 if x["condition"] == k and x.get("history", "full") == "full"]  # fmt: skip
+            cond[k] = f"{sum(v) / len(v):.3f}" if v else "–"
+        g = [gaps(r) for r in rs.values()]
+        tasks = sorted(set.intersection(*(set(x) for x in g)))
+        gb = cluster_bootstrap(task_means({t: [x[t] for x in g] for t in tasks}), **kw) if tasks else None
+        gap = f"{gb['estimate']:+.3f} [{gb['low']:+.3f}, {gb['high']:+.3f}]" if gb else "–"
+        out.append(f"| {c} | {cond['empty']} | {cond['on_path']} | {cond['off_path']} | {gap} | {len(tasks)} |")
+    nohist = [r for r in runs if r.configuration == "1" and r.backbone == qwen and r.variant == ""
+              and any(x.get("history") == "none" for x in r.resume)]  # fmt: skip
+    if nohist:
+        v = [float(x["success"]) for r in nohist for x in r.resume if x["condition"] == "off_path"]
+        w = [float(x["success"]) for r in nohist for x in r.resume if x["condition"] == "on_path"]
+        out.append(f"| 1, no history | – | {sum(w) / len(w):.3f} | {sum(v) / len(v):.3f} | – | – |")
+    out.append("")
+
+    out += ["## 5. Greedy success along the budget (curves; Qwen and Llama, seeds averaged)", "",
+            "| backbone | configuration | 25% | 50% | 75% | 100% |",
+            "| --- | --- | --- | --- | --- | --- |"]  # fmt: skip
+    for b in (qwen, llama):
+        for c in configs:
+            cells = []
+            for label in ("frac-0.25", "frac-0.5", "frac-0.75", "frac-1"):
+                rs = by_seed(runs, c, b, label=label)
+                v = [sum(r.greedy.values()) / len(r.greedy) for r in rs.values() if r.greedy]
+                cells.append(f"{sum(v) / len(v):.3f}" if v else "–")
+            if any(x != "–" for x in cells):
+                out.append(f"| {b.split('/')[1]} | {c} | " + " | ".join(cells) + " |")
+    out.append("")
+
+    out += ["## 6. Renamed and held-out larger sets (greedy; Qwen, seeds averaged)", "",
+            "| configuration | renamed | held-out larger |", "| --- | --- | --- |"]  # fmt: skip
+    for c in ("1", "2", "3", "4", "5", "6"):
+        cells = []
+        for split in ("renamed", "heldout_larger"):
+            rs = by_seed(runs, c, qwen, split=split)
+            v = [sum(r.greedy.values()) / len(r.greedy) for r in rs.values() if r.greedy]
+            cells.append(f"{sum(v) / len(v):.3f}" if v else "–")
+        if any(x != "–" for x in cells):
+            out.append(f"| {c} | " + " | ".join(cells) + " |")
+    out.append("")
+
+    out += ["## 7. Ablations, ToolHop and the extras", "",
+            "| run | split | seeds | greedy success | sampled success |",
+            "| --- | --- | --- | --- | --- |"]  # fmt: skip
+    seen = set()
+    for r in sorted(runs, key=lambda r: (r.split, r.variant, r.configuration, r.seed)):
+        key = (r.split, r.variant, r.configuration, r.backbone)
+        if key in seen or r.label not in ("frac-1", None):
+            continue
+        if not (r.split in ("toolhop", "stateful_test") or r.variant not in ("", "base") or r.configuration == "a4"):
+            continue
+        seen.add(key)
+        group = [x for x in runs if (x.split, x.variant, x.configuration, x.backbone) == key and x.label == r.label]
+        g = [sum(x.greedy.values()) / len(x.greedy) for x in group if x.greedy]
+        sp = [sum(v) / len(v) for x in group for v in x.samples.values()]
+        name = f"{r.variant or 'main'} configuration {r.configuration}" + (
+            " (a4: see the run ids)" if r.configuration == "a4" else ""
+        )
+        out.append(f"| {name} | {r.split} | {len(group)} | {sum(g) / len(g):.3f} | "
+                   f"{sum(sp) / len(sp):.3f} |" if g and sp
+                   else f"| {name} | {r.split} | {len(group)} | – | – |")  # fmt: skip
+    out += [
+        "",
+        "## 8. Decision for the human",
+        "",
+        "Whether M2 runs (MILESTONES GATE B). **STOP.** The agent starts no M2 work before the human decides.",
+        "",
+    ]
+    out += ["## Sources (sha256)", ""] + [f"- `{p}` {d}" for p, d in sources]
+    return "\n".join(out) + "\n"
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--gate", choices=["A"], required=True)
+    parser.add_argument("--gate", choices=["A", "B"], required=True)
     parser.add_argument("--compile-run", type=Path)
     parser.add_argument("--stats-run", type=Path)
     parser.add_argument("--pilot-run", type=Path)
-    parser.add_argument("--out", type=Path, default=REPO / "docs" / "reports" / "gate-A.md")
+    parser.add_argument("--out", type=Path)
     args = parser.parse_args(argv)
+    args.out = args.out or REPO / "docs" / "reports" / f"gate-{args.gate}.md"
+    if args.gate == "B":
+        from qet.core.compile import read_records, width
+        from qet.eval.criteria import load_runs
+
+        src = Sources()
+        compile_run = args.compile_run or REPO / "results" / "raw" / "M1-compile-20261018T023058Z"  # frozen (D-028)
+        cm = src.json(compile_run / "manifest.json")
+        path = compile_run / "test" / "records.jsonl"
+        if src.file(path) != cm["splits"]["test"]["files"]["records.jsonl"]:
+            raise SystemExit(f"{path} does not match its compile manifest")
+        widths = {r.task_id: width(r.n, r.preds()) for r in read_records(path)}
+        folders = sorted(p for p in RAW.glob("M1-eval-*") if (p / "manifest.json").exists())
+        for f in folders:
+            src.file(f / "manifest.json")
+            for pred in sorted((f / "predictions").glob("*.jsonl")):
+                src.file(pred)
+        plan = (REPO / "docs" / "EVAL_PLAN.md").read_text(encoding="utf-8")
+        src.file(REPO / "docs" / "EVAL_PLAN.md")
+        section = plan[plan.index("## 9.") : plan.index("## 10.")]
+        text = gate_b(load_runs(folders), widths, section, src.files)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(text, encoding="utf-8")
+        print(args.out)
+        return
     compile_run = args.compile_run or latest("M1-compile-")
     stats_run = args.stats_run or latest("M1-pilot-stats-")
     pilot = args.pilot_run
