@@ -1,0 +1,1 @@
+configs/m1/eval-c6-qwen7b-n1250-full-s0.yaml
