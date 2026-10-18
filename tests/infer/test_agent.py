@@ -209,3 +209,48 @@ def test_greedy_and_8_sample_decoding_with_the_real_backbone():
         print(toy.task_id, "greedy:", greedy.end, greedy.success, repr(greedy.steps[0].raw_output[:80]),
               "| sampled successes:", sum(e.success for e in sampled), "/ 8")  # fmt: skip
     assert len(ends) == 45 and set(ends) <= {"finish", "invalid_action", "budget_exhausted"}
+
+
+class PerEpisode:
+    """Each episode's own scripted actions, chosen by the prompt it sends: a stateless policy many episodes can share,
+    with outputs that do not depend on who else is in a batch. Invalid text for prompts it has not seen."""
+
+    def __init__(self, fmt, scripts):
+        self.fmt, self.next, self.batches = fmt, {}, []
+        for env_id, actions in scripts.items():
+            self.next[env_id] = list(actions)
+
+    def generate(self, prompt_ids, seed):
+        return self.generate_batch([prompt_ids], [seed])[0]
+
+    def generate_batch(self, prompts, seeds):
+        self.batches.append(len(prompts))
+        out = []
+        for ids in prompts:
+            env_id = next((k for k in self.next if self.fmt.decode(list(ids)).count(k)), None)
+            text = self.next[env_id].pop(0) if env_id and self.next[env_id] else "not an action"
+            out.append(Generation(self.fmt.encode(text) + [self.fmt.eot_id], True, 0.0))
+        return out
+
+
+def test_lockstep_episodes_equal_one_at_a_time(fmt):
+    from qet.infer.agent import EpisodeState, run_episodes
+
+    rng = random.Random(1)
+    tasks = toys()[:6]
+    scripts, budgets = {}, {}
+    for i, toy in enumerate(tasks):
+        record, _ = compile_toy(toy)
+        order = random_topological_order(node_masks(record.n, record.preds()), rng)
+        actions = actions_for(record, order)
+        if i % 3 == 1:
+            actions = actions[:2] + ["not json"]  # ends with an invalid action
+        budgets[toy.task_id] = 1 if i % 3 == 2 else None  # ends on the budget
+        scripts[toy.request.split(".")[0]] = actions  # the request's first sentence names the task in its prompt
+    assert len(scripts) == len(tasks)  # each task's prompt names it uniquely
+    one = [run_episode(ToyEnv(t), PerEpisode(fmt, scripts), fmt, budget=budgets[t.task_id]).to_json() for t in tasks]
+    policy = PerEpisode(fmt, scripts)
+    states = [EpisodeState(ToyEnv(t), fmt, budget=budgets[t.task_id]) for t in tasks]
+    many = [e.to_json() for e in run_episodes(states, policy)]
+    assert many == one and {e["end"] for e in one} == {"finish", "invalid_action", "budget_exhausted"}
+    assert policy.batches[0] == len(tasks) and max(policy.batches) == len(tasks)

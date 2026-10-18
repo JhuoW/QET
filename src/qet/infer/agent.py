@@ -82,6 +82,94 @@ def _close(episode: Episode, env: Environment) -> Episode:
     return episode
 
 
+class EpisodeState:
+    """Algorithm 2 on one task as a state machine, so that one driver (`run_episode`) or a lockstep batch of them
+    (`run_episodes`) applies exactly the same rules. `prompt()` renders the real history (None once the episode is
+    over), `seed()` is the current step's decoding seed, `advance()` applies one generation. `prefix` holds steps
+    {tool, args, obs} already executed in `env` (Resume@prefix restores the state by executing a legal order of the
+    prefix); the budget then counts the agent's own calls and defaults to what remains of the environment's."""
+
+    def __init__(
+        self,
+        env: Environment,
+        fmt: ChatFormat,
+        *,
+        renderer: str = "quotient",
+        truncation: Mapping[str, Any] | Truncation | None = None,
+        prefix: Sequence[Mapping[str, Any]] = (),
+        budget: int | None = None,
+        rollout: int = 0,
+        run_seed: int = 0,
+    ):
+        self.env, self.fmt, self.renderer, self.truncation = env, fmt, renderer, truncation
+        self.rollout, self.run_seed = rollout, run_seed
+        self.x = env.task()
+        self.contracts = env.contracts()
+        self.tool_names = [t["name"] for t in self.x["tools"]]
+        self.finish = self.x.get("finish", "finish")
+        self.history = [dict(s) for s in prefix]
+        self.budget = max(0, env.step_budget() - len(prefix)) if budget is None else budget
+        if self.budget < 0:
+            raise ValueError(f"the step budget must be >= 0, got {self.budget}")
+        self.episode = Episode(env.task_id, rollout, "", False, None, 0, len(prefix))
+        self.t = 0
+        self.done = False
+        self._ids: list[int] | None = None
+
+    def prompt(self) -> list[int] | None:
+        if self.done:
+            return None
+        if self._ids is None:
+            try:
+                self._ids = self.fmt.prompt_ids(
+                    render_messages(self.x, self.history, self.contracts, self.renderer, self.truncation)
+                )
+            except ValueError as e:  # an observation the prompt cannot carry (D-022d): adapters should prevent it
+                self.episode.end = "render_error"
+                self.episode.steps.append(StepLog("", 0, 0, "", error=str(e)))
+                self._end()
+                return None
+        return self._ids
+
+    def seed(self) -> int:
+        return step_seed(self.run_seed, self.env.task_id, self.rollout, self.t)
+
+    def advance(self, gen: Generation) -> None:
+        ids, episode = self._ids, self.episode
+        if self.done or ids is None:
+            raise RuntimeError("advance() needs the prompt of a running episode")
+        self._ids = None
+        raw = self.fmt.decode(gen.ids[:-1] if gen.ended else gen.ids)
+        log = StepLog(prompt_sha256(ids), len(ids), len(gen.ids), raw)
+        episode.steps.append(log)
+        parsed = parse_action(raw, self.tool_names) if gen.ended else Invalid("no end of turn within the token limit")
+        if isinstance(parsed, Invalid):
+            log.error = parsed.reason
+            episode.end = "invalid_action"
+            return self._end()
+        log.action = {"tool": parsed.tool, "args": parsed.args}
+        if parsed.tool == self.finish:
+            episode.answer = parsed.args.get("answer")
+            episode.success = bool(self.env.check(episode.answer))
+            episode.end = "finish"
+            return self._end()
+        if episode.calls >= self.budget:  # a tool call beyond the budget ends the episode
+            episode.steps[-1].error = "budget exhausted"
+            episode.end = "budget_exhausted"
+            return self._end()
+        obs = self.env.step(parsed.tool, parsed.args)
+        episode.calls += 1
+        log.observation = obs
+        if isinstance(obs, dict) and "error" in obs:
+            log.error = "observation error"
+        self.history.append({"tool": parsed.tool, "args": parsed.args, "obs": obs})
+        self.t += 1
+
+    def _end(self) -> None:
+        self.done = True
+        _close(self.episode, self.env)
+
+
 def run_episode(
     env: Environment,
     policy: Policy,
@@ -94,48 +182,28 @@ def run_episode(
     rollout: int = 0,
     run_seed: int = 0,
 ) -> Episode:
-    """Algorithm 2 on one task. `prefix` holds steps {tool, args, obs} already executed in `env` (Resume@prefix
-    restores the state by executing a legal order of the prefix); the budget then counts the agent's own calls and
-    defaults to what remains of the environment's."""
-    x = env.task()
-    contracts = env.contracts()
-    tool_names = [t["name"] for t in x["tools"]]
-    finish = x.get("finish", "finish")
-    history = [dict(s) for s in prefix]
-    budget = max(0, env.step_budget() - len(prefix)) if budget is None else budget
-    if budget < 0:
-        raise ValueError(f"the step budget must be >= 0, got {budget}")
-    episode = Episode(env.task_id, rollout, "", False, None, 0, len(prefix))
-    for t in range(budget + 1):
-        try:
-            ids = fmt.prompt_ids(render_messages(x, history, contracts, renderer, truncation))
-        except ValueError as e:  # an observation the prompt cannot carry (D-022d): adapters should prevent it
-            episode.end = "render_error"
-            episode.steps.append(StepLog("", 0, 0, "", error=str(e)))
-            return _close(episode, env)
-        gen = policy.generate(ids, step_seed(run_seed, env.task_id, rollout, t))
-        raw = fmt.decode(gen.ids[:-1] if gen.ended else gen.ids)
-        log = StepLog(prompt_sha256(ids), len(ids), len(gen.ids), raw)
-        episode.steps.append(log)
-        parsed = parse_action(raw, tool_names) if gen.ended else Invalid("no end of turn within the token limit")
-        if isinstance(parsed, Invalid):
-            log.error = parsed.reason
-            episode.end = "invalid_action"
-            return _close(episode, env)
-        log.action = {"tool": parsed.tool, "args": parsed.args}
-        if parsed.tool == finish:
-            episode.answer = parsed.args.get("answer")
-            episode.success = bool(env.check(episode.answer))
-            episode.end = "finish"
-            return _close(episode, env)
-        if episode.calls >= budget:
-            break
-        obs = env.step(parsed.tool, parsed.args)
-        episode.calls += 1
-        log.observation = obs
-        if isinstance(obs, dict) and "error" in obs:
-            log.error = "observation error"
-        history.append({"tool": parsed.tool, "args": parsed.args, "obs": obs})
-    episode.steps[-1].error = "budget exhausted"
-    episode.end = "budget_exhausted"
-    return _close(episode, env)
+    """Algorithm 2 on one task (see `EpisodeState` for the arguments)."""
+    state = EpisodeState(env, fmt, renderer=renderer, truncation=truncation, prefix=prefix, budget=budget,
+                         rollout=rollout, run_seed=run_seed)  # fmt: skip
+    while (ids := state.prompt()) is not None:
+        state.advance(policy.generate(ids, state.seed()))
+    return state.episode
+
+
+class BatchPolicy(Protocol):
+    def generate_batch(self, prompts: Sequence[Sequence[int]], seeds: Sequence[int]) -> list[Generation]: ...
+
+
+def run_episodes(states: Sequence[EpisodeState], policy: Policy | BatchPolicy) -> list[Episode]:
+    """Many episodes in lockstep: each round decodes the next action of every running episode in one batch. With
+    per-step seeds, each episode's outputs do not depend on which episodes share its batches, up to the backend's
+    numerics (D-026b)."""
+    batch = getattr(policy, "generate_batch", None)
+    while live := [(s, ids) for s in states if (ids := s.prompt()) is not None]:
+        prompts, seeds = [ids for _, ids in live], [s.seed() for s, _ in live]
+        gens = (
+            batch(prompts, seeds) if batch else [policy.generate(i, sd) for i, sd in zip(prompts, seeds, strict=True)]
+        )
+        for (s, _), gen in zip(live, gens, strict=True):
+            s.advance(gen)
+    return [s.episode for s in states]
