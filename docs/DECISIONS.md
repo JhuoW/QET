@@ -536,6 +536,13 @@ GPU-hours (the step-budget column of the script is higher and is not a cap). Gua
 projected evaluation hours pass 110% of the likely figure; no test evaluation runs before EVAL_PLAN §9 carries the
 accepted wording (D-030e).
 
+Update 2026-10-19 (guard reached): the 46 evaluation batches were queued as two chains (logs/pbs/chains-
+20261019T032949Z.json, jobs 88553-88598). After 4 batches had finished, `python scripts/m1_eval_projection.py` (commit
+072de81) projected (a)-(b) at 164.2 GPU-hours, 113.2% of 145 (guard 159.5), with ToolHop and the D-033 extras 21.4 more:
+a full evaluation run measures about 3.5 GPU-hours (5 Qwen runs; Llama and nohist not yet measured). The agent asked;
+the human chose "Pause the queue now": the 2 running batches (88557, 88558) finish, and the 40 waiting batches carry a
+user hold (`qhold -h u`) until the human decides; `qrls -h u` releases them.
+
 ### D-033 Design of the M1.7 training extras: data curve and false-independence ablation
 The human chose these extras (D-032c); the design choices are the agent's. Both run on Qwen2.5-7B-Instruct, seed 0, in
 the quotient renderer, at the matrix's settings (B = 125M tokens, D-009 defaults, checkpoints at 25/50/75/100%), each
