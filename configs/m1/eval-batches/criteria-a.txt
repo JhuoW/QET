@@ -1,0 +1,10 @@
+configs/m1/eval-c4-qwen7b-crit-s0.yaml
+configs/m1/eval-c4-qwen7b-crit-s1.yaml
+configs/m1/eval-c4-qwen7b-crit-s2.yaml
+configs/m1/eval-c1-qwen7b-crit-s0.yaml
+configs/m1/eval-c1-qwen7b-crit-s1.yaml
+configs/m1/eval-c1-qwen7b-crit-s2.yaml
+configs/m1/eval-c2-qwen7b-crit-s0.yaml
+configs/m1/eval-c2-qwen7b-crit-s1.yaml
+configs/m1/eval-c2-qwen7b-crit-s2.yaml
+configs/m1/eval-c5-qwen7b-crit-s2.yaml

@@ -543,6 +543,20 @@ a full evaluation run measures about 3.5 GPU-hours (5 Qwen runs; Llama and nohis
 the human chose "Pause the queue now": the 2 running batches (88557, 88558) finish, and the 40 waiting batches carry a
 user hold (`qhold -h u`) until the human decides; `qrls -h u` releases them.
 
+(e) Evaluation reduced to the pre-registered criteria (the human, 2026-10-19, "可以" to the agent's minimal plan;
+decided before any result of configurations 1, 2, 4 or 5 existed). Beyond the 6 batches already run (configurations 3
+and 6 on Qwen, every evaluation of the batch), only what EVAL_PLAN §9 criteria 1-3 read is evaluated: configurations 4,
+1 and 2 greedy on the test graphs, configuration 5 greedy plus Resume@prefix at every depth (as configurations 3 and 6
+ran it), 3 seeds each, checkpoint frac-1, same frozen test set, decoding, max_new_tokens and vLLM 0.11
+(`scripts/make_m1_configs.py eval-criteria`, configs/m1/plans/eval-criteria.txt, two batches). Why: the full core
+projected past the D-032 guard; the agent's token-count estimate from M1-eval-c6-qwen7b-full-s0 puts greedy at about 5%
+of a full run, Resume@prefix about 70% and the 8 samples about 26%, so the reduced set is about 10 GPU-hours against
+about 42 for full runs of the four configurations (an estimate from token counts, not timings). Not run unless the
+human releases them later: the 40 held batches (configurations 1, 2, 4, 5 full runs with samples, curves, renamed,
+heldout and ToolHop; nohist; Llama; ablations a1-a4; base models; the D-033 extras). The reports state which parts of
+EVAL_PLAN §5 were not run and why; vLLM batch composition differs from the full runs (run-to-run noise, D-032d: accepted
+and disclosed).
+
 ### D-033 Design of the M1.7 training extras: data curve and false-independence ablation
 The human chose these extras (D-032c); the design choices are the agent's. Both run on Qwen2.5-7B-Instruct, seed 0, in
 the quotient renderer, at the matrix's settings (B = 125M tokens, D-009 defaults, checkpoints at 25/50/75/100%), each

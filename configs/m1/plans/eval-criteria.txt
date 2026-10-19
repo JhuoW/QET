@@ -1,0 +1,3 @@
+# M1.7 evaluation reduced to EVAL_PLAN §9 criteria 1-3 (D-032e); one batch per chain
+batch configs/m1/eval-batches/criteria-a.txt 24:00:00
+batch configs/m1/eval-batches/criteria-b.txt 24:00:00

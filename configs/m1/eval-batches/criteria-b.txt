@@ -1,0 +1,2 @@
+configs/m1/eval-c5-qwen7b-crit-s0.yaml
+configs/m1/eval-c5-qwen7b-crit-s1.yaml
