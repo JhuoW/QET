@@ -34,7 +34,14 @@ batch configs/m1/eval-batches/a3-qwen7b-s0.txt 24:00:00
 batch configs/m1/eval-batches/a4k2-qwen7b-s0.txt 24:00:00
 batch configs/m1/eval-batches/a4k4-qwen7b-s0.txt 24:00:00
 batch configs/m1/eval-batches/a4k8-qwen7b-s0.txt 24:00:00
+batch configs/m1/eval-batches/c2-qwen7b-n1250-s0.txt 24:00:00
 batch configs/m1/eval-batches/c6-qwen7b-n1250-s0.txt 24:00:00
+batch configs/m1/eval-batches/c2-qwen7b-n224-s0.txt 24:00:00
+batch configs/m1/eval-batches/c6-qwen7b-n224-s0.txt 24:00:00
 batch configs/m1/eval-batches/c6-qwen7b-fi-s0.txt 24:00:00
 batch configs/m1/eval-batches/c2-qwen7b-stateful-s0.txt 24:00:00
 batch configs/m1/eval-batches/c2-qwen7b-stateful-s1.txt 24:00:00
+batch configs/m1/eval-batches/c2-qwen7b-stateful-s2.txt 24:00:00
+batch configs/m1/eval-batches/c6-qwen7b-stateful-s0.txt 24:00:00
+batch configs/m1/eval-batches/c6-qwen7b-stateful-s1.txt 24:00:00
+batch configs/m1/eval-batches/c6-qwen7b-stateful-s2.txt 24:00:00
