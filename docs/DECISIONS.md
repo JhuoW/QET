@@ -497,7 +497,9 @@ matrix's measured training GPU-hours would pass the projection by more than 10%.
 follows the batched-decoding measurement (f). (b) No grid, as proposed. (c) max_new_tokens = 512, as proposed. (d) 10
 graphs per cell, as proposed; the frozen test manifests are built next and their hashes recorded in D-028. (e) The §9
 wording accepted as proposed ("Accept as proposed"); EVAL_PLAN.md is human-only, so the human pastes it in, and no test
-evaluation runs before EVAL_PLAN §9 carries it. Also decided: Q17, a4 uses the sub-lattice on every graph (D-023a
+evaluation runs before EVAL_PLAN §9 carries it. Applied 2026-10-19: at the human's request the agent pasted the
+accepted wording into §9 (heading and criteria 1-3; 4-5 unchanged) in a maintenance session the human started with
+QET_ALLOW_PROTECTED_EDITS=1. Also decided: Q17, a4 uses the sub-lattice on every graph (D-023a
 stands); D-028c, the toy accounts-and-orders tasks are the stateful extension.
 
 ### D-031 M1.6 job plan: staged submission, walltime, budget guard

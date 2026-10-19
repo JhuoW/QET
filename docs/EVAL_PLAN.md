@@ -169,11 +169,18 @@ GPU budget: set at Gate A from the pilot's measured tokens per graph and through
   AppWorld variants by scenario; McNemar on paired task outcomes (greedy). Report effect sizes with intervals.
 - No hidden reasoning across steps for any system.
 
-## 9. Falsification criteria (pre-registered; finalize wording at Gate A, then frozen)
-1. On graphs of width ≥ 3, if configuration 3 or 4 matches 6 within the 95% interval at matched compute, the
-   objective claim fails.
-2. If 1 vs 2 is significant but 2 vs 6 is not, the gain belongs to the interface, not the objective.
-3. If 6 does not shrink the off-path gap relative to both 3 and 5, claim C4 fails.
+## 9. Falsification criteria (pre-registered at Gate A, 2026-10-18; frozen)
+Common terms: FuncBenchGen test graphs; every run evaluated at its checkpoint at 100% of B, so the compared runs have
+spent the same compute (up to the last step's overshoot of B, D-023f) and no checkpoint is selected; success averaged
+over the three seeds of each task; differences with paired-bootstrap 95% intervals (10,000 resamples, clustered by
+task); "significant" means the interval excludes 0. McNemar per seed is reported alongside.
+1. Greedy success on graphs of measured width ≥ 3: if the interval of (6 − 3) or of (6 − 4) contains 0 or lies below
+   it, the objective claim fails.
+2. Greedy success on all test graphs: if (2 − 1) is significant and positive but the interval of (6 − 2) contains 0
+   or lies below it, the gain belongs to the interface, not the objective.
+3. Resume@prefix greedy success on the test tasks that have off-path starts, with the off-path gap = on-path minus
+   off-path success at the frozen starts: if the interval of (gap 3 − gap 6) or of (gap 5 − gap 6) contains 0 or lies
+   below it, claim C4 fails.
 4. If QET does not beat re-scored ToolLLaMA on StableToolBench, the published comparison fails; parity with
    DTA-Llama is acceptable (QET does not target parallel latency).
 5. If the AppWorld audit finds most graphs collapse to chains, QET is reported as inapplicable there; compile
