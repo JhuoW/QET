@@ -556,6 +556,8 @@ human releases them later: the 40 held batches (configurations 1, 2, 4, 5 full r
 heldout and ToolHop; nohist; Llama; ablations a1-a4; base models; the D-033 extras). The reports state which parts of
 EVAL_PLAN §5 were not run and why; vLLM batch composition differs from the full runs (run-to-run noise, D-032d: accepted
 and disclosed).
+Update 2026-10-20: after the Gate B report the human said the held batches are no longer needed ("我不再需要这些批次"); the
+40 held jobs (88559-88598) were deleted with qdel. They can be resubmitted from configs/m1/plans/eval.txt if wanted.
 
 ### D-033 Design of the M1.7 training extras: data curve and false-independence ablation
 The human chose these extras (D-032c); the design choices are the agent's. Both run on Qwen2.5-7B-Instruct, seed 0, in
