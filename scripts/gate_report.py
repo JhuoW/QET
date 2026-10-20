@@ -490,7 +490,17 @@ def gate_b(runs: list, widths: dict[str, int], plan_section: str, sources: list[
            f"From {len(runs)} completed evaluation runs (vLLM 0.11, D-026, D-032), recomputed from their saved "
            "predictions; the test widths come from the frozen compile run. vLLM's greedy decoding is not repeatable "
            "run "
-           "to run (D-032d): each number here is one evaluation, read from its saved predictions.", ""]  # fmt: skip
+           "to run (D-032d): each number here is one evaluation, read from its saved predictions.", "",
+           "Not run (D-032e: the evaluation was reduced to the pre-registered criteria before any result of "
+           "configurations 1, 2, 4 or 5 existed, after the cost projection passed the D-032 guard; results of 3 and 6 "
+           "existed, and no pre-registered criterion or comparison changed): configurations 1, 2, 4 and 5 were "
+           "evaluated greedy only (5 also with Resume@prefix), without samples, budget curves or the renamed and "
+           "held-out sets, and configuration 2 without ToolHop; the no-history condition, every Llama run, the "
+           "ablations a1-a4, the base models and the D-033 extras were not evaluated. A dash in a table marks an "
+           "evaluation not run.", "",
+           "Every comparison in section 1 is fresh and causal in design: the same pipeline, data, budget B and "
+           "evaluation, differing only in the configuration. Criterion 3 compares per-task gaps (a difference of two "
+           "success rates), which has no paired binary outcome, so no McNemar test is given for it.", ""]  # fmt: skip
 
     def interval(d: dict) -> str:
         return f"{d['estimate']:+.3f} [{d['low']:+.3f}, {d['high']:+.3f}]"
